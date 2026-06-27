@@ -1,4 +1,6 @@
-# Flect KV Skill
+---
+title: KV Store
+---
 
 ## What It Is
 

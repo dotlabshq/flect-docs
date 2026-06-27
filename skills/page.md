@@ -1,4 +1,6 @@
-# Flect Page Skill
+---
+title: Static Pages
+---
 
 ## What It Is
 

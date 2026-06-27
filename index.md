@@ -1,6 +1,13 @@
-# Flect
-
-Flect is a developer platform for deploying containerized applications with managed databases and caching — without touching infrastructure.
+---
+title: Flect
+description: Developer platform for deploying apps, databases, and KV stores on your own infrastructure.
+hero:
+  tagline: Deploy apps, databases, and KV stores — without touching infrastructure.
+  actions:
+    - text: Get Started
+      link: /guides/quickstart/
+      icon: right-arrow
+---
 
 ## What you get
 
@@ -21,14 +28,3 @@ flect app deploy myapp --image ghcr.io/you/myapp:1.0.0
 ```
 
 Your app talks to its database and cache through `flect-proxy`. The proxy validates your `FLECT_TOKEN` and enforces namespace/prefix isolation — no app can access another app's data.
-
-## Quickstart
-
-→ [Quickstart guide](./guides/quickstart.md)
-
-## Sections
-
-- [CLI Reference](./cli/index.md)
-- [SDK Reference](./sdk/index.md)
-- [Platform Concepts](./platform/index.md)
-- [Guides](./guides/index.md)

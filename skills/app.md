@@ -1,4 +1,6 @@
-# Flect App Skill
+---
+title: App Deployment
+---
 
 ## What It Is
 

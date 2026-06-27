@@ -1,4 +1,6 @@
-# Flect Database Skill
+---
+title: Database
+---
 
 ## What It Is
 

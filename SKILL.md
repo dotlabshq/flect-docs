@@ -1,4 +1,6 @@
-# Flect Platform Skill
+---
+title: Flect Platform Skill
+---
 
 ## Purpose
 
