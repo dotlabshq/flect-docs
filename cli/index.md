@@ -1,4 +1,6 @@
-# CLI Reference
+---
+title: CLI Reference
+---
 
 Install the Flect CLI:
 

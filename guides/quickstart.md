@@ -1,4 +1,6 @@
-# Quickstart
+---
+title: Quickstart
+---
 
 Deploy your first app on Flect in under 5 minutes.
 

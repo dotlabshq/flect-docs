@@ -1,4 +1,6 @@
-# Platform Concepts
+---
+title: Platform Concepts
+---
 
 ## How Flect works
 

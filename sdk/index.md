@@ -1,4 +1,6 @@
-# SDK Reference
+---
+title: SDK Reference
+---
 
 `@flect/sdk` is the TypeScript client library for accessing Flect-managed databases and KV stores from your application.
 

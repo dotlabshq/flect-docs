@@ -1,4 +1,6 @@
-# Example: Notes API
+---
+title: "Example: Notes API"
+---
 
 A complete REST API built with [Hono](https://hono.dev/), using a Flect database for persistence and a Flect KV store for caching.
 

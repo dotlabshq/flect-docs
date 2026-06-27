@@ -1,4 +1,6 @@
-# Local Development
+---
+title: Local Development
+---
 
 Run your Flect app locally while pointing at real or local resources.
 

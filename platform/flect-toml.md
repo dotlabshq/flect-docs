@@ -1,4 +1,6 @@
-# flect.toml Reference
+---
+title: flect.toml Reference
+---
 
 `flect.toml` lives in the root of your project. The CLI reads it during `flect app deploy` to map binding names to the correct resources.
 
