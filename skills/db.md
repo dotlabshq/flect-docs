@@ -1,127 +1,90 @@
 ---
-title: Database
+title: Databases
+description: SQLite-compatible databases via sqld/libsql, resolved as an official @libsql/client.
 ---
 
-## What It Is
+## What it is
 
-Flect databases are SQLite-compatible, powered by **sqld** (libsql). Each database gets its own namespace on the shared sqld server, accessed via HTTP through `flect-proxy` for isolation and auth.
+Flect databases are SQLite-compatible, powered by **sqld** (libsql). Each
+database is an isolated sqld namespace. `env.db(binding)` hands you an official
+[`@libsql/client`](https://github.com/tursodatabase/libsql-client-ts) already
+scoped to that namespace — no URL or token in your code.
 
-Compatible with: Drizzle ORM, Prisma (libsql adapter), raw libsql client.
-
-## Create a Database
+## Create
 
 ```bash
-flect db create <name>          # e.g. flect db create my-db
-flect db list                   # show databases in current env
-flect db shell <name>           # interactive SQL shell
+flect db create my-db          # prints the public ref for flect.toml
+flect db list
+flect db status <ref>
+flect db delete <ref>
 ```
 
-## Bind to an App
+`flect deploy` also creates any database named in `flect.toml` that doesn't
+exist yet.
 
-In `flect.toml`:
+## Bind
 
 ```toml
 [[databases]]
-binding = "DB"       # becomes DB_URL env var in the app
-name    = "my-db"    # database slug from flect db list
+binding        = "DB"
+name           = "my-db"
+migrations_dir = "migrations"   # optional: where your .sql files live
 ```
 
-Multiple databases:
-```toml
-[[databases]]
-binding = "USERS_DB"
-name    = "users-db"
-
-[[databases]]
-binding = "ANALYTICS_DB"
-name    = "analytics-db"
-```
-
-## Use in Code
-
-Install SDK: `npm install @flect/sdk`
+## Use in code
 
 ```typescript
-import { db } from '@flect/sdk'
+import { createEnv } from '@flect/sdk'
 
-// db() returns a libsql client, pre-configured from DB_URL + FLECT_TOKEN
-const client = db()
+const env = createEnv()
+const db  = await env.db('DB')   // binding name from flect.toml
 
-// Execute queries
-const result = await client.execute('SELECT * FROM users WHERE id = ?', [userId])
-const rows = result.rows  // typed rows
+// SELECT
+const { rows } = await db.execute('SELECT id, name FROM users WHERE active = ?', [1])
 
-// Transactions
-await client.batch([
-  'INSERT INTO users (name) VALUES ("Alice")',
-  'INSERT INTO audit_log (action) VALUES ("user_created")',
+// INSERT / UPDATE / DELETE — parameterized
+await db.execute({
+  sql: 'INSERT INTO users (id, name) VALUES (?, ?)',
+  args: [crypto.randomUUID(), 'Alice'],
+})
+
+// Atomic batch
+await db.batch([
+  { sql: 'INSERT INTO posts (id, title) VALUES (?, ?)', args: [id, title] },
+  { sql: 'UPDATE users SET post_count = post_count + 1 WHERE id = ?', args: [userId] },
 ])
 ```
 
-### With Drizzle ORM
+It's the standard client, so it works directly with Drizzle:
 
 ```typescript
-import { drizzle }   from 'drizzle-orm/libsql'
-import { db as flectDb } from '@flect/sdk'
-
-const db = drizzle(flectDb())
-
-// Use normally
-const users = await db.select().from(usersTable)
-```
-
-### With Raw libsql
-
-```typescript
-import { createClient } from '@libsql/client'
-
-const client = createClient({
-  url:   process.env['DB_URL']!,
-  authToken: process.env['FLECT_TOKEN'],
-})
-```
-
-## Schema Migrations
-
-Run migrations before app start. Example with Drizzle:
-
-```typescript
-// src/migrate.ts
-import { migrate } from 'drizzle-orm/libsql/migrator'
 import { drizzle } from 'drizzle-orm/libsql'
-import { db }      from '@flect/sdk'
-
-await migrate(drizzle(db()), { migrationsFolder: './drizzle' })
+const orm = drizzle(await env.db('DB'))
 ```
 
-Or use `flect db shell` to run SQL directly:
+## Isolation
+
+Each request carries the resource's sqld namespace as an `x-namespace` header, so
+a binding only ever reads and writes its own data — enforced by sqld, not by
+convention.
+
+## Local development
 
 ```bash
-flect db shell my-db
-> CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT);
+flect dev     # writes flect.local.json; createEnv() resolves DB locally
 ```
 
-## Local Development
-
-For local dev without a deployed environment, use libsql local file:
+By default a local database is `:memory:`. For a persistent local sqld, set
+`DB_URL` (see [Local development](/guides/local-dev/)):
 
 ```bash
-# .env.local
-DB_URL=file:./local.db
-# FLECT_TOKEN not needed locally (no proxy)
+docker run -d -p 8080:8080 ghcr.io/tursodatabase/libsql-server:latest \
+  /bin/sqld --enable-namespaces
+# DB_URL=http://localhost:8080
 ```
 
-```typescript
-import { createClient } from '@libsql/client'
+## Notes
 
-const client = createClient({
-  url: process.env['DB_URL'] ?? 'file:./local.db',
-  authToken: process.env['FLECT_TOKEN'],
-})
-```
-
-## Limits
-
-- SQLite semantics: no concurrent writes, best for read-heavy workloads
-- Max DB size: determined by sqld instance storage
-- Namespace isolation: each database is fully isolated from others
+- SQLite write semantics apply (a single writer at a time).
+- Migrations: keep your `.sql` files in `migrations_dir` and apply them from your
+  app or tooling using the same `@libsql/client` (`db.execute`/`db.batch`).

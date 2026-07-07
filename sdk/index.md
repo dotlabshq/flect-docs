@@ -1,18 +1,19 @@
 ---
 title: SDK Reference
+description: createEnv() and the resource clients — the entire application-facing API.
 ---
 
-`@flect/sdk` is the TypeScript client library for accessing Flect-managed databases and KV stores from your application.
-
-## Installation
+`@flect/sdk` is the TypeScript client for accessing Flect-managed resources.
+Its whole surface is one function and three accessors. It hands you the
+**official client** for each resource — a real `@libsql/client`, `ioredis`, or
+`@aws-sdk/client-s3` instance — already pointed at the right endpoint and scoped
+to your project. There is no Flect-specific query wrapper to learn.
 
 ```bash
 npm install @flect/sdk
 ```
 
-## Setup
-
-The SDK reads configuration from environment variables that are automatically injected at deploy time. No manual configuration needed in production.
+## `createEnv(options?)`
 
 ```typescript
 import { createEnv } from '@flect/sdk'
@@ -20,149 +21,127 @@ import { createEnv } from '@flect/sdk'
 const env = createEnv()
 ```
 
-For local development, set the env vars yourself (see [Local Development](../guides/local-dev.md)).
+`createEnv()` is I/O-free — it does no network calls until you resolve a
+binding. By default it reads:
+
+- `FLECT_BROKER_URL` — the broker to resolve bindings through
+- `FLECT_TOKEN` — the runtime token (both injected automatically on deploy)
+
+When no broker URL is configured, it switches to **local mode** and resolves
+from `flect.local.json` (see [Local development](/guides/local-dev/)).
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `brokerUrl` | Broker base URL. Default: `FLECT_BROKER_URL`, else `http://localhost:8787`. |
+| `authToken` | Runtime token. Default: `FLECT_TOKEN`. |
+| `local` | `true` to force local mode (`flect.local.json` / `FLECT_LOCAL_CONFIG`), or a config object. |
+| `retry` | Retry policy for broker resolution calls. |
+| `fetch` | Custom `fetch` implementation (tests, proxies). |
+
+Each accessor returns a `Promise` — resolution happens on first use, and clients
+are cached until their lease expires.
 
 ---
 
-## Database
+## Database — `env.db(binding)`
 
-Get a database client for a binding defined in `flect.toml`:
-
-```typescript
-const db = env.db('DB')
-```
-
-This reads:
-- `DB_URL` — sqld endpoint (via flect-proxy in production)
-- `DB_NAMESPACE` — the isolated namespace for this database
-- `FLECT_TOKEN` — proxy auth token (injected automatically at deploy)
-
-### `db.query<T>(sql, params?)`
-
-Execute a SELECT query and return typed rows.
+Returns an official [`@libsql/client`](https://github.com/tursodatabase/libsql-client-ts)
+instance. Install it as a peer dependency: `npm install @libsql/client`.
 
 ```typescript
-const users = await db.query<{ id: string; name: string }>(
-  'SELECT id, name FROM users WHERE active = ?',
-  [true]
-)
-```
+const db = await env.db('DB')
 
-Parameters are passed as an array. Supported types: `string`, `number`, `boolean`, `null`.
+// libsql API — parameterized queries, batches, transactions
+const { rows } = await db.execute('SELECT id, title FROM notes ORDER BY created_at DESC')
 
-### `db.execute(sql, params?)`
+await db.execute({
+  sql: 'INSERT INTO notes (id, title) VALUES (?, ?)',
+  args: [crypto.randomUUID(), 'Hello'],
+})
 
-Execute an INSERT, UPDATE, or DELETE statement.
-
-```typescript
-const { rowsAffected } = await db.execute(
-  'INSERT INTO users (id, name) VALUES (?, ?)',
-  [crypto.randomUUID(), 'Alice']
-)
-```
-
-### `db.batch(statements)`
-
-Execute multiple statements atomically.
-
-```typescript
 await db.batch([
-  { sql: 'INSERT INTO posts (id, title) VALUES (?, ?)', params: [id, title] },
-  { sql: 'UPDATE users SET post_count = post_count + 1 WHERE id = ?', params: [userId] },
+  { sql: 'INSERT INTO posts (id, title) VALUES (?, ?)', args: [id, title] },
+  { sql: 'UPDATE users SET post_count = post_count + 1 WHERE id = ?', args: [userId] },
 ])
 ```
 
----
-
-## KV Store
-
-Get a KV client for a binding defined in `flect.toml`:
+Isolation is transparent: Flect stamps the resource's sqld namespace on every
+request, so a binding only ever sees its own data. Because it's the standard
+client, it drops straight into `drizzle-orm/libsql`:
 
 ```typescript
-const cache = env.kv('CACHE')
+import { drizzle } from 'drizzle-orm/libsql'
+const orm = drizzle(await env.db('DB'))
 ```
-
-This reads:
-- `CACHE_URL` — Valkey endpoint with auth credentials (via flect-proxy)
-- `FLECT_TOKEN` — proxy auth token
-
-All keys are automatically namespaced — you cannot accidentally read or write another app's keys.
-
-### `kv.get(key)`
-
-```typescript
-const value = await cache.get('session:abc123')
-// → string | null
-```
-
-### `kv.getJson<T>(key)`
-
-```typescript
-const user = await cache.getJson<User>('user:abc123')
-// → T | null
-```
-
-### `kv.set(key, value, options?)`
-
-```typescript
-await cache.set('session:abc123', 'active')
-await cache.set('session:abc123', 'active', { ttl: 3600 }) // expires in 1h
-```
-
-### `kv.setJson(key, value, options?)`
-
-```typescript
-await cache.setJson('user:abc123', { id: 'abc123', name: 'Alice' }, { ttl: 60 })
-```
-
-### `kv.del(key)`
-
-```typescript
-await cache.del('session:abc123')
-```
-
-### `kv.exists(key)`
-
-```typescript
-const exists = await cache.exists('session:abc123')
-// → boolean
-```
-
-### `kv.keys(pattern?)`
-
-```typescript
-const keys = await cache.keys('session:*')
-// → string[]
-```
-
-Pattern matching uses Redis glob syntax. Keys are returned without the internal namespace prefix.
 
 ---
 
-## Local Development
+## KV — `env.kv(binding)`
 
-In production, all env vars are injected automatically. For local development, you need to provide them manually.
+Returns an official [`ioredis`](https://github.com/redis/ioredis) instance.
+Install it as a peer dependency: `npm install ioredis`.
 
-If you have a Flect account, you can point directly at the shared sqld and Valkey instances for development:
+```typescript
+const cache = await env.kv('CACHE')
 
-```bash
-# .env.local
-DB_URL=http://100.64.0.1:8081
-DB_NAMESPACE=<your-namespace>
-CACHE_URL=redis://100.64.0.1:6380
-CACHE_PREFIX=<your-prefix>
+await cache.set('session:abc', 'active', 'EX', 3600)   // 1h TTL
+const val = await cache.get('session:abc')
+await cache.del('session:abc')
+
+await cache.incr('counter')
+const many = await cache.mget('a', 'b', 'c')
 ```
 
-Or run sqld and Valkey locally with Docker:
+Every key is transparently prefixed with the resource's namespace, so stores
+never collide. The full ioredis command set is available.
 
-```bash
-docker run -d -p 8080:8080 ghcr.io/tursodatabase/libsql-server:latest
-docker run -d -p 6379:6379 valkey/valkey:8-alpine
+---
+
+## Object storage — `env.store(binding)`
+
+Returns an official [`@aws-sdk/client-s3`](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/)
+`S3Client`, pre-configured with the resource's endpoint, region, bucket, and
+credentials. Install the peers: `npm install @aws-sdk/client-s3`.
+
+```typescript
+import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
+
+const s3 = await env.store('FILES')
+const bucket = process.env.FILES_BUCKET   // the resolved bucket name
+
+await s3.send(new PutObjectCommand({
+  Bucket: bucket,
+  Key: 'avatars/alice.png',
+  Body: buffer,
+  ContentType: 'image/png',
+}))
+
+const obj = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: 'avatars/alice.png' }))
 ```
 
-```bash
-DB_URL=http://localhost:8080
-CACHE_URL=redis://localhost:6379
+For presigned URLs, use `@aws-sdk/s3-request-presigner` with the same client —
+it's a standard `S3Client`.
+
+---
+
+## Typing the client
+
+Each accessor takes an optional type parameter if you want to annotate the
+returned client:
+
+```typescript
+import type { Client } from '@libsql/client'
+const db = await env.db<Client>('DB')
 ```
 
-> Note: `FLECT_TOKEN` is not required in local development. The SDK skips proxy auth when the URL points directly to sqld or Valkey.
+---
+
+## Why it works this way
+
+Your code depends only on well-known, well-documented libraries — Flect owns
+none of your data-access API. The platform's job is resolution and isolation:
+turning `env.db('DB')` into a scoped, short-lived, correctly-namespaced client,
+without a URL or secret ever appearing in your source. See
+[Platform architecture](/platform/) for how resolution works.

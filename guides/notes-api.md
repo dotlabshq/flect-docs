@@ -1,45 +1,44 @@
 ---
 title: "Example: Notes API"
+description: A complete Hono REST API using a Flect database and a Flect KV cache.
+sidebar:
+  order: 3
 ---
 
-A complete REST API built with [Hono](https://hono.dev/), using a Flect database for persistence and a Flect KV store for caching.
-
-Source: [`examples/notes-api`](https://github.com/dotlabshq/baseworks-ts/tree/main/examples/notes-api)  
-Live demo: [https://notes-yc8sx2.up.flect.run](https://notes-yc8sx2.up.flect.run)
+A small REST API built with [Hono](https://hono.dev/), backed by a Flect
+database for persistence and a Flect KV store for caching. It shows the whole
+loop: declare bindings, write `createEnv()` code, deploy.
 
 ## What it demonstrates
 
-- Database CRUD with `@flect/sdk`
-- KV cache-first pattern (list cached 60s, single item 120s)
-- Cache invalidation on write
+- Database CRUD with the official `@libsql/client` from `env.db()`
+- A cache-first read pattern with `ioredis` from `env.kv()`
+- Cache invalidation on writes
 - `flect.toml` binding configuration
-- Docker multi-stage build with tsup
+- A single-file Docker image
 
-## Setup
+## 1. Declare resources in `flect.toml`
 
-### 1. Create resources
+```toml
+name    = "notes-api"
+runtime = "node"
+port    = 3000
 
-```bash
-flect org create --name flect-examples && flect org use flect-examples
-flect ws create --name default && flect ws use default
-flect proj create --name notes && flect proj use notes
-flect env create --name production && flect env use production
+[[databases]]
+binding        = "DB"
+name           = "notes-db"
+migrations_dir = "migrations"
+
+[[kv]]
+binding = "CACHE"
+name    = "notes-cache"
 ```
 
-### 2. Create database and KV store
+The `notes-db` and `notes-cache` resources are created automatically on
+`flect deploy` if they don't exist yet (or create them ahead of time with
+`flect db create notes-db` / `flect kv create notes-cache`).
 
-```bash
-flect db create --name notes-db
-flect kv create --name notes-cache
-```
-
-### 3. Run migrations
-
-```bash
-flect db migrate notes-db --dir migrations
-```
-
-The migration creates the `notes` table:
+## 2. The schema
 
 ```sql
 -- migrations/0001_create_notes.sql
@@ -52,137 +51,103 @@ CREATE TABLE IF NOT EXISTS notes (
 );
 ```
 
-### 4. Create the app
+## 3. The app
 
-```bash
-flect app create --name notes
+```typescript
+import { Hono } from 'hono'
+import { createEnv } from '@flect/sdk'
+
+const env   = createEnv()
+const db    = await env.db('DB')      // official @libsql/client
+const cache = await env.kv('CACHE')   // official ioredis
+
+const app = new Hono()
+
+interface Note {
+  id: string; title: string; body: string
+  created_at: number; updated_at: number
+}
+
+// cache-first list
+app.get('/notes', async (c) => {
+  const cached = await cache.get('all')
+  if (cached) return c.json({ notes: JSON.parse(cached), source: 'cache' })
+
+  const { rows } = await db.execute('SELECT * FROM notes ORDER BY created_at DESC')
+  await cache.set('all', JSON.stringify(rows), 'EX', 60)   // cache for 60s
+  return c.json({ notes: rows, source: 'db' })
+})
+
+// create + invalidate cache
+app.post('/notes', async (c) => {
+  const { title, body = '' } = await c.req.json()
+  const now = Date.now()
+  const note: Note = { id: crypto.randomUUID(), title, body, created_at: now, updated_at: now }
+
+  await db.execute({
+    sql: 'INSERT INTO notes (id, title, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+    args: [note.id, note.title, note.body, note.created_at, note.updated_at],
+  })
+  await cache.del('all')
+  return c.json({ note }, 201)
+})
+
+app.get('/healthz', (c) => c.json({ ok: true }))
+
+export default app
 ```
 
-### 5. Deploy
+`db.execute()` and `cache.get/set/del` are the **real** libsql and ioredis
+APIs — Flect doesn't wrap them. Anything those libraries (or `drizzle-orm/libsql`)
+support works unchanged.
+
+## 4. Deploy
 
 ```bash
-flect app deploy notes --image ghcr.io/dotlabshq/notes-api:0.1.4
+docker build -t ghcr.io/you/notes-api:1.0.0 .
+docker push ghcr.io/you/notes-api:1.0.0
+
+flect deploy
+```
+
+```
+✓ provisioned  database  notes-db-a1b2c3d4
+✓ provisioned  kv        notes-cache-e5f6g7h8
+✓ deployed     notes-api https://notes-api-3f9k2a.up.flect.run   running
 ```
 
 ## API
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/notes` | List all notes (cached) |
-| `POST` | `/notes` | Create a note |
-| `GET` | `/notes/:id` | Get a note (cached) |
-| `PATCH` | `/notes/:id` | Update a note |
-| `DELETE` | `/notes/:id` | Delete a note |
+| `GET` | `/notes` | List all notes (cached 60s) |
+| `POST` | `/notes` | Create a note (invalidates cache) |
 | `GET` | `/healthz` | Health check |
 
-### Create a note
-
 ```bash
-curl -X POST https://notes-yc8sx2.up.flect.run/notes \
+curl -X POST https://notes-api-3f9k2a.up.flect.run/notes \
   -H 'Content-Type: application/json' \
-  -d '{"title": "My first note", "body": "Hello from Flect!"}'
+  -d '{"title":"My first note","body":"Hello from Flect!"}'
 ```
 
-```json
-{
-  "note": {
-    "id": "cdb564dc-7fe5-4e6b-b545-5fd534ed038f",
-    "title": "My first note",
-    "body": "Hello from Flect!",
-    "created_at": 1782594882769,
-    "updated_at": 1782594882769
-  }
-}
-```
+The `source` field on `GET /notes` is `"db"` on first load and `"cache"` on
+subsequent requests within 60 seconds.
 
-### List notes
-
-```bash
-curl https://notes-yc8sx2.up.flect.run/notes
-```
-
-```json
-{
-  "notes": [...],
-  "source": "cache"
-}
-```
-
-`source` is `"db"` on first load, `"cache"` on subsequent requests within 60 seconds.
-
-## Code walkthrough
-
-### `flect.toml`
-
-```toml
-name = "notes-api"
-port = 3000
-
-[[databases]]
-binding        = "DB"
-name           = "notes-db"
-migrations_dir = "migrations"
-
-[[kv]]
-binding = "CACHE"
-name    = "notes-cache"
-```
-
-### `src/index.ts`
-
-```typescript
-import { createEnv } from '@flect/sdk'
-
-const env   = createEnv()
-const db    = env.db('DB')      // connects via FLECT_TOKEN → flect-proxy → sqld
-const cache = env.kv('CACHE')   // connects via FLECT_TOKEN → flect-proxy → Valkey
-
-// cache-first list
-app.get('/notes', async (c) => {
-  const cached = await cache.getJson<Note[]>('all')
-  if (cached) return c.json({ notes: cached, source: 'cache' })
-
-  const notes = await db.query<Note>('SELECT * FROM notes ORDER BY created_at DESC')
-  await cache.setJson('all', notes, { ttl: 60 })
-  return c.json({ notes, source: 'db' })
-})
-
-// invalidate cache on write
-app.post('/notes', async (c) => {
-  // ... insert into db
-  await cache.del('all')
-  return c.json({ note }, 201)
-})
-```
-
-### Dockerfile
+## Dockerfile
 
 ```dockerfile
-FROM node:22-alpine AS builder
+FROM node:22-alpine AS build
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
-COPY examples/notes-api/package.json          examples/notes-api/package.json
-COPY projects/flect/packages/sdk/package.json projects/flect/packages/sdk/package.json
-
-RUN pnpm install --frozen-lockfile
-
-COPY projects/flect/packages/sdk/ projects/flect/packages/sdk/
-COPY examples/notes-api/          examples/notes-api/
-
-RUN pnpm --filter @flect/sdk build
-RUN pnpm --filter notes-api build
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build          # bundle to dist/index.js (e.g. with tsup/esbuild)
 
 FROM node:22-alpine
 WORKDIR /app
-COPY --from=builder /app/examples/notes-api/dist/index.cjs ./index.cjs
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/node_modules ./node_modules
 ENV NODE_ENV=production
 EXPOSE 3000
-CMD ["node", "index.cjs"]
+CMD ["node", "dist/index.js"]
 ```
-
-Key points:
-- Multi-stage build keeps the final image minimal
-- `tsup` with `format: ['cjs']` and `noExternal: [/.*/]` bundles everything into a single file — no `node_modules` in the final image
-- `@flect/sdk` is built first, then bundled into the app

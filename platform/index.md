@@ -1,88 +1,105 @@
 ---
-title: Platform Concepts
+title: Platform architecture
+description: How the Flect control plane provisions, binds, deploys, and resolves resources.
+sidebar:
+  order: 0
 ---
 
-## How Flect works
-
-Flect is a deployment platform built on:
+## The stack
 
 | Layer | Technology | Role |
 |-------|-----------|------|
+| Control plane | **broker** (`flect-api`) | Event-sourced API: scopes, resources, bindings, deploys, resolution |
 | Orchestration | [Nomad](https://www.nomadproject.io/) | Runs your containers |
-| Routing | [Traefik](https://traefik.io/) | HTTPS, TLS, reverse proxy |
+| Routing | [Traefik](https://traefik.io/) | HTTPS termination, TLS certificates, reverse proxy |
 | Service discovery | [Consul](https://www.consul.io/) | Nomad → Traefik wiring |
-| Database | [sqld](https://github.com/tursodatabase/libsql) | SQLite with HTTP API, multi-tenant namespaces |
-| Cache | [Valkey](https://valkey.io/) | Redis-compatible KV store |
-| Proxy | flect-proxy | Token auth + namespace enforcement |
+| Database | [sqld](https://github.com/tursodatabase/libsql) | SQLite over HTTP, multi-namespace |
+| KV | [Valkey](https://valkey.io/) | Redis-compatible store |
+| Object storage | [Garage](https://garagehq.deuxfleurs.fr/) | S3-compatible object store |
 
-## Resource hierarchy
+The **broker** is the only thing your app and CLI talk to. It's an
+event-sourced control plane: every scope, resource, binding, and deployment is
+an event in a shared log, and the current state is a projection of that log.
+
+## Scopes
+
+Everything is addressed within a tree:
 
 ```
-Organization
+Org
 └── Workspace
     └── Project
         └── Environment
             ├── Apps
             ├── Databases
-            └── KV Stores
+            ├── KV stores
+            └── Object stores
 ```
 
-All resources in an environment share the same isolation boundary. An app can access any database or KV store in its environment — and only those.
+An **org** is your tenant (you get one on login). You create the workspace /
+project / environment scopes and select an **active scope** with `flect use`.
+Resources and deploys target the active scope, so the same code and `flect.toml`
+deploy to `dev`, `staging`, and `prod` with fully isolated resources.
 
-## App lifecycle
+## How resolution works
 
-1. `flect app create` — reserves a hostname, creates the DB record
-2. `flect db create` + `flect kv create` — provision resources
-3. `flect db migrate` — apply schema to the database
-4. `flect app deploy --image <img>` — submits a Nomad job:
-   - Injects `FLECT_TOKEN`, `DB_URL`, `DB_NAMESPACE`, `CACHE_URL` env vars
-   - Registers service in Consul with Traefik tags
-   - Traefik issues TLS cert via Let's Encrypt (Cloudflare DNS challenge)
-5. App is live at `https://<name>-<shortid>.up.flect.run`
+This is the core idea: **your app never holds a connection string or a secret.**
 
-## Hostnames
+1. On deploy, Flect injects exactly two env vars into your container:
+   `FLECT_TOKEN` (a scoped runtime token) and `FLECT_BROKER_URL`.
+2. `createEnv().db('DB')` asks the broker to resolve the binding `DB`, presenting
+   the token (and the active scope).
+3. The broker returns a **manifest** — a temporary, scoped connection with an
+   `expiresAt` lease (a URL + a sqld namespace, a redis URL + key prefix, or an
+   S3 endpoint + bucket + keys).
+4. The SDK builds the *official* client from the manifest and caches it until
+   the lease expires, then re-resolves.
 
-Every app gets a permanent hostname at deploy time:
+No credential is ever baked into your image, printed in your source, or reused
+across scopes. Rotating access is a matter of the broker issuing a new manifest.
+
+## Isolation
+
+Each resource is isolated at the storage layer, not just by convention:
+
+- **Database** — every request carries the resource's sqld namespace as an
+  `x-namespace` header (RFC-0017 "direct mode"). sqld enforces namespace
+  separation; a binding only ever sees its own data.
+- **KV** — every key is prefixed with the resource's namespace, so two KV stores
+  never collide even with identical key names.
+- **Object storage** — each store is its own Garage bucket with its own API key
+  pair. There is no cross-bucket access.
+
+## Deploy and routing
+
+`flect deploy` reads `flect.toml`, provisions missing resources, binds them, and
+submits a Nomad `service` job. Traefik picks the service up from Consul and
+issues a TLS certificate. An app declares one of three routing modes:
+
+| Mode | `flect.toml` | Traefik rule |
+|------|--------------|--------------|
+| **public** | `public = true` | owns the domain: `Host(...)` |
+| **expose** | `expose = "/path"` | a path under a shared domain: `Host(...) && PathPrefix(/path)` (prefix stripped) |
+| **private** | *(default)* | no ingress; reachable only inside the cluster |
+
+Public apps get a stable generated hostname:
 
 ```
 https://<app-name>-<shortid>.up.flect.run
 ```
 
-The `shortid` is generated once and stays with the app. Redeploying the same app reuses the same hostname.
+The `shortid` is generated once and stays with the app across redeploys. Bring
+your own domain by setting `[app].domain` and pointing a CNAME at it.
 
-## Security model
+## Plans and limits
 
-### flect-proxy
+Every org starts on the **hobby** plan. Limits are enforced org-wide at the
+control plane; exceeding one returns HTTP `402` with a clear message.
 
-Apps never connect directly to sqld or Valkey. All traffic goes through `flect-proxy`:
+| Plan | Apps | Databases | KV | Storage |
+|------|------|-----------|----|---------|
+| Hobby | 3 | 1 | 1 | 1 |
+| Pro | 10 | 3 | 3 | 3 |
+| Team | 25 | 10 | 10 | 10 |
 
-```
-App → flect-proxy:7001 → sqld      (HTTP)
-App → flect-proxy:7002 → Valkey    (RESP/TCP)
-```
-
-The proxy:
-1. Validates `FLECT_TOKEN` against the database (60s TTL cache)
-2. Verifies the requested namespace/prefix belongs to the token's environment
-3. Forwards the request to the backend
-
-This means:
-- A compromised app cannot access another app's data even if it knows the namespace
-- Tokens can be rotated by redeploying the app
-- Credential exposure is limited to what the proxy allows
-
-### Namespace isolation
-
-Each database gets a unique namespace: `<org>-<db-name>`. sqld enforces namespace separation at the storage level — queries in namespace A cannot touch namespace B.
-
-Each KV store gets a unique key prefix: `<org>:<ws>:<proj>:<env>:<name>:`. The proxy prepends this prefix to every key operation, so `GET mykey` from the app becomes `GET flect-examples:default:myapp:production:cache:mykey` on Valkey.
-
-## Migrations
-
-`flect db migrate` applies SQL files to a database. Migration state is tracked in a `_flect_migrations` table inside the database itself — so each database tracks its own history independently.
-
-```bash
-flect db migrate myapp-db --dir ./migrations
-```
-
-Files are applied in alphabetical order. Already-applied files are skipped. Migration is idempotent — safe to run multiple times.
+Deprovisioned resources don't count toward the limit.

@@ -1,8 +1,12 @@
 # Flect — Agent Instructions
 
-You are helping a user build and deploy a project on **Flect**, a developer platform for apps, databases, KV stores, and static pages.
+You are helping a user build and deploy a project on **Flect**, a developer
+platform for apps, databases, KV stores, and object storage. The defining idea:
+application code calls `createEnv()` and asks for a binding by name — it never
+handles URLs, ports, or secrets. The platform provisions resources and resolves
+each binding to a scoped, official client at runtime.
 
-## Fetch Current Docs
+## Fetch current docs
 
 Always fetch the latest docs before answering. Raw content is at:
 
@@ -10,88 +14,102 @@ Always fetch the latest docs before answering. Raw content is at:
 https://raw.githubusercontent.com/dotlabshq/flect-docs/main/<path>
 ```
 
-Key files to fetch based on the task:
-- Architecture: `platform/index.md`
+Key files:
 - CLI: `cli/index.md`
 - SDK: `sdk/index.md`
+- Architecture: `platform/index.md`
 - flect.toml: `platform/flect-toml.md`
 - Quickstart: `guides/quickstart.md`
 
-## Platform Overview
+## Platform overview
 
-Flect resources live under a hierarchy: **Org → Workspace → Project → Environment**
+Resources live in a hierarchy: **Org → Workspace → Project → Environment**. Each
+environment can hold multiple **Apps** (containers), **Databases** (sqld/libsql),
+**KV stores** (Valkey), and **Object stores** (Garage/S3).
 
-Each environment can have:
-- Multiple **Apps** (containerized services)
-- Multiple **Databases** (sqld/libsql, SQLite-compatible)
-- Multiple **KV stores** (Valkey, Redis-compatible)
-- Multiple **Pages** (static sites from GitHub repos)
+At deploy time Flect injects only `FLECT_TOKEN` and `FLECT_BROKER_URL`. The SDK
+uses them to resolve bindings through the broker into short-lived, scoped
+connections. Nothing else — no `DB_URL`, no credentials — is ever put in the
+image or the code.
 
-## Typical Project Workflow
+## Typical workflow
 
 ```
 1. flect login
-2. flect use <org>/<workspace>/<project>   # set active context
-3. flect db create <name>                  # create database
-4. flect kv create <name>                  # create KV store
-5. Write flect.toml with bindings
-6. flect app deploy <name> --image <img>   # deploy app
-   OR
-   flect page create <name>
-   flect page deploy <name> --repo <url>   # deploy static site
+2. flect use <workspace>/<project>/<environment>   # active scope
+3. flect init                                       # scaffold flect.toml
+4. Declare bindings in flect.toml
+5. Write app code with createEnv()
+6. flect dev        # optional: run locally with flect.local.json
+7. flect deploy     # provisions resources, binds, deploys the container
 ```
 
-## flect.toml Structure
+Create resources explicitly with `flect db|kv|store create <name>` (each prints
+the ref to paste into flect.toml), or let `flect deploy` provision anything named
+in flect.toml that doesn't exist yet.
+
+## flect.toml
+
+Single-app form:
 
 ```toml
-[app]
 name    = "my-app"
-image   = "ghcr.io/you/my-app:1.0.0"
+runtime = "node"
 port    = 3000
-memory  = 256
-cpu     = 256
-region  = "eu"
 
 [[databases]]
-binding = "DB"       # env var name in the app
-name    = "my-db"    # flect database slug
+binding        = "DB"           # the name code passes to env.db()
+name           = "my-db"        # the Flect resource
+migrations_dir = "migrations"   # optional
 
 [[kv]]
-binding = "CACHE"    # env var name in the app
-name    = "my-kv"    # flect KV slug
+binding = "CACHE"
+name    = "my-cache"
 
-[page]
-template = "docs"
-title    = "My Docs"
-github   = "https://github.com/you/repo"
+[[stores]]
+binding = "FILES"
+name    = "my-uploads"
 ```
 
-## SDK Usage
+App-group form (multiple apps / shared domain) uses `[app]` + `[[apps]]` +
+optional `[vars]` and `[[services]]`. See `platform/flect-toml.md`.
+
+## SDK usage
 
 Install: `npm install @flect/sdk`
 
 ```typescript
-import { db, kv } from '@flect/sdk'
+import { createEnv } from '@flect/sdk'
 
-// Database — libsql-compatible
-const client = db()
-const result = await client.execute('SELECT * FROM posts WHERE id = ?', [id])
+const env = createEnv()
 
-// KV — ioredis-compatible
-const cache = kv()
-await cache.set('session:123', JSON.stringify(data), 'EX', 3600)
-const val = await cache.get('session:123')
+// Each accessor is async and returns the OFFICIAL client, already scoped.
+const db    = await env.db('DB')       // @libsql/client  → db.execute(), db.batch()
+const cache = await env.kv('CACHE')    // ioredis         → cache.get/set/del/...
+const files = await env.store('FILES') // @aws-sdk/client-s3 S3Client → s3.send(cmd)
 ```
 
-Env vars injected by Flect at deploy time:
-- `DB_URL` — libsql HTTP endpoint (via `[[databases]]` binding)
-- `CACHE_URL` — redis:// URL (via `[[kv]]` binding)
-- `FLECT_TOKEN` — proxy auth token (set automatically, do not override)
+Rules to get right:
+- `env.db/kv/store` are **async** — always `await` them.
+- They return the **real** libsql / ioredis / S3 clients. Do NOT invent
+  `db.query()`, `kv.getJson()`, or `store.put()` wrappers — use each library's
+  own API.
+- The binding string must match a `binding` in flect.toml.
+- Install the client library your bindings need as a peer dependency:
+  `@libsql/client`, `ioredis`, `@aws-sdk/client-s3`.
+
+## Deploy requirements (apps)
+
+- The container listens on the `port` in flect.toml.
+- It responds to `GET /healthz` with 200 (Traefik health check).
+- Build for `linux/amd64`; bundle dependencies into the image.
+- Public apps get `https://<name>-<shortid>.up.flect.run`; set `[app].domain`
+  for a custom domain and point a CNAME at it.
 
 ## Skills
 
-For detailed component docs, load the relevant skill file:
+For component detail, load the relevant skill:
 - Database: `skills/db.md`
-- KV Store: `skills/kv.md`
-- App Deploy: `skills/app.md`
-- Static Page: `skills/page.md`
+- KV store: `skills/kv.md`
+- Object storage: `skills/store.md`
+- App deploy: `skills/app.md`

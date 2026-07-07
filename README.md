@@ -1,54 +1,58 @@
 # Flect
 
-Flect is a developer platform for deploying apps, databases, key-value stores, and static pages. It runs on your own infrastructure via Nomad and exposes a CLI + SDK for building and deploying projects.
+Flect is a developer platform for deploying apps and their backing resources —
+**databases, KV stores, and object storage** — on your own infrastructure
+(Nomad + Traefik). You declare what your project needs in `flect.toml`; Flect
+provisions it, binds it, and deploys your containers behind TLS.
+
+Your code stays clean: it calls `createEnv()` and asks for a binding by name. It
+never sees a URL, a port, or a secret. At deploy time Flect injects only
+`FLECT_TOKEN` and `FLECT_BROKER_URL`; the SDK resolves each binding to a scoped,
+short-lived connection at runtime.
 
 ## Resources
 
-| Resource | Description |
-|----------|-------------|
-| **App** | Containerized application (Docker → Nomad) |
-| **Database** | SQLite-compatible database via sqld/libsql |
-| **KV** | Redis-compatible key-value store via Valkey |
-| **Page** | Static site deployed from a GitHub repo |
+| Resource | Backed by | Accessor |
+|----------|-----------|----------|
+| **App** | Docker → Nomad | — |
+| **Database** | sqld / libsql (SQLite-compatible) | `env.db('DB')` |
+| **KV** | Valkey (Redis-compatible) | `env.kv('CACHE')` |
+| **Object storage** | Garage (S3-compatible) | `env.store('FILES')` |
 
-## Quick Start
+## Quick start
 
 ```bash
-# Install
 npm install -g @flect/cli
 
-# Login
-flect login
-
-# Create resources
-flect db create my-db
-flect kv create my-cache
-
-# Deploy an app
-flect app deploy my-app --image ghcr.io/you/my-app:1.0.0
-
-# Deploy a static page
-flect page create my-docs
-flect page deploy my-docs --repo github.com/you/my-docs
+flect login                    # SSO, stored in ~/.flect/config.json
+flect use acme/web/prod        # org / workspace / project / environment
+flect init                     # scaffold flect.toml
+flect deploy                   # provision resources, bind, deploy
 ```
 
 ## SDK
 
 ```typescript
-import { db, kv } from '@flect/sdk'
+import { createEnv } from '@flect/sdk'
 
-// SQLite-compatible DB
-const rows = await db().execute('SELECT * FROM users')
+const env = createEnv()
 
-// Redis-compatible KV
-await kv().set('key', 'value')
-const val = await kv().get('key')
+const db    = await env.db('DB')       // an official @libsql/client
+const cache = await env.kv('CACHE')    // an official ioredis
+const files = await env.store('FILES') // an official @aws-sdk/client-s3
+
+const { rows } = await db.execute('SELECT * FROM notes')
+await cache.set('key', 'value')
 ```
+
+The SDK returns the **official** client for each resource — there's no
+Flect-specific query API to learn.
 
 ## Docs
 
 - [Quickstart](guides/quickstart.md)
-- [CLI Reference](cli/index.md)
-- [SDK Reference](sdk/index.md)
-- [Platform Architecture](platform/index.md)
-- [flect.toml Reference](platform/flect-toml.md)
+- [Local development](guides/local-dev.md)
+- [CLI reference](cli/index.md)
+- [SDK reference](sdk/index.md)
+- [Platform architecture](platform/index.md)
+- [flect.toml reference](platform/flect-toml.md)

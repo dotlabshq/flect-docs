@@ -1,291 +1,227 @@
 ---
 title: CLI Reference
+description: Every flect command — login, scopes, resources, deploy, and config.
 ---
 
-Install the Flect CLI:
+Install the CLI:
 
 ```bash
 npm install -g @flect/cli
 ```
 
+The CLI is a client of the Flect control plane (the *broker*). It reads its
+connection from, in order of precedence: command flags → environment
+(`FLECT_BROKER_URL`, `FLECT_TOKEN`) → `~/.flect/config.json` → defaults.
+
 ---
 
-## Authentication
+## Auth
 
 ### `flect login`
 
-Authenticate with your Flect account.
+Sign in via SSO and store an identity token in `~/.flect/config.json`.
 
 ```bash
 flect login
+flect login --auth https://api.example.com   # override the auth base
 ```
-
-Opens a browser window. After sign-in, the token is saved to `~/.config/flect/config.json`.
 
 ### `flect logout`
 
-Remove saved credentials.
+Clear the stored token.
 
 ```bash
 flect logout
 ```
 
----
+### `flect whoami`
 
-## Context
-
-The CLI remembers your active org, workspace, project, and environment. Most commands use these automatically — you can override any of them with `--org`, `--ws`, `--proj`, `--env` flags.
+Show who you are and where the CLI is pointed (tenant, identity, broker, active
+scope).
 
 ```bash
-flect org use my-org
-flect ws use default
-flect proj use myproject
-flect env use production
+flect whoami
 ```
 
 ---
 
-## Organizations
+## Scopes
 
-### `flect org create`
+Everything lives in a tree: **Org → Workspace → Project → Environment**. Your
+login gives you the org; you create the rest. Resource and deploy commands act
+on the **active scope**.
 
-```bash
-flect org create --name <name>
-```
+### `flect scope create <kind> <name>`
 
-### `flect org list`
-
-```bash
-flect org list
-```
-
-### `flect org use`
-
-Set the active organization.
+`kind` is `workspace`, `project`, or `environment`. Nest with `--parent`.
 
 ```bash
-flect org use <name-or-id>
+flect scope create workspace web
+flect scope create project site --parent <workspace-id>
+flect scope create environment prod --parent <project-id> --slug prod
 ```
-
----
-
-## Workspaces
-
-Workspaces live inside an org. Use them to group projects (e.g. by team or product line).
-
-### `flect ws create`
-
-```bash
-flect ws create --name <name>
-```
-
-### `flect ws list`
-
-```bash
-flect ws list
-```
-
-### `flect ws use`
-
-```bash
-flect ws use <name-or-id>
-```
-
----
-
-## Projects
-
-### `flect proj create`
-
-```bash
-flect proj create --name <name>
-```
-
-### `flect proj list`
-
-```bash
-flect proj list
-```
-
-### `flect proj use`
-
-```bash
-flect proj use <name-or-id>
-```
-
----
-
-## Environments
-
-Environments live inside a project. Typical names: `production`, `staging`, `preview`.
-
-### `flect env create`
-
-```bash
-flect env create --name <name>
-```
-
-### `flect env list`
-
-```bash
-flect env list
-```
-
-### `flect env use`
-
-```bash
-flect env use <name-or-id>
-```
-
----
-
-## Databases
-
-Flect databases are isolated SQLite instances powered by [sqld](https://github.com/tursodatabase/libsql). Each database gets its own namespace — no data leaks between apps.
-
-### `flect db create`
-
-```bash
-flect db create --name <name>
-```
-
-### `flect db list`
-
-```bash
-flect db list
-```
-
-### `flect db migrate`
-
-Run SQL migration files against a database. Migration names are tracked — already-applied files are skipped.
-
-```bash
-flect db migrate <name-or-id> --dir ./migrations
-```
-
-Migration files must be `.sql` files. They are applied in alphabetical order.
-
-```
-migrations/
-  0001_create_users.sql
-  0002_add_posts.sql
-```
-
-### `flect db delete`
-
-```bash
-flect db delete <name-or-id>
-```
-
----
-
-## KV Stores
-
-Flect KV stores are isolated namespaces on a shared Valkey (Redis-compatible) cluster. Each store has a unique key prefix — keys from one app are invisible to others.
-
-### `flect kv create`
-
-```bash
-flect kv create --name <name>
-```
-
-### `flect kv list`
-
-```bash
-flect kv list
-```
-
-### `flect kv delete`
-
-```bash
-flect kv delete <name-or-id>
-```
-
----
-
-## Apps
-
-### `flect app create`
-
-```bash
-flect app create --name <name>
-```
-
-Creates the app record and reserves a hostname: `<name>-<shortid>.up.flect.run`.
-
-Options:
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--cpu <mhz>` | 256 | CPU allocation in MHz |
-| `--mem <mb>` | 256 | Memory allocation in MB |
-| `--replicas <n>` | 1 | Number of instances |
-
-### `flect app list`
-
-```bash
-flect app list
-```
-
-### `flect app get`
-
-```bash
-flect app get <name-or-id>
-```
-
-### `flect app deploy`
-
-Deploy a container image. Run this from the directory containing `flect.toml` — the CLI reads binding names from it and maps them to the correct env vars.
-
-```bash
-flect app deploy <name-or-id> --image <image:tag>
-```
-
-What happens:
-1. CLI reads `flect.toml` for `[[databases]]` and `[[kv]]` binding names
-2. API generates a `FLECT_TOKEN` for the app (or reuses the existing one)
-3. A Nomad job is submitted with all env vars injected
-4. Traefik picks up the new service from Consul, issues a TLS cert if needed
-5. Your app is live at `https://<name>-<shortid>.up.flect.run`
-
-### `flect app delete`
-
-```bash
-flect app delete <name-or-id>
-```
-
----
-
-## Deployments
-
-### `flect deployment list` / `flect app deployment list`
-
-Show deployment history for an app.
-
-```bash
-flect deployment --app <name-or-id>
-# or
-flect app deployment --app <name-or-id>
-```
-
-### `flect deployment get`
-
-Show details of a specific deployment.
-
-```bash
-flect app deployment get <deployment-id> --app <name-or-id>
-```
-
----
-
-## Global flags
-
-Most commands accept:
 
 | Flag | Description |
 |------|-------------|
-| `--org <slug>` | Override active org |
-| `--ws <slug>` | Override active workspace |
-| `--proj <slug>` | Override active project |
-| `--env <slug>` | Override active environment |
-| `--output json` | Output as JSON (default: table) |
-| `--wide` | Show extra columns in table output |
+| `--parent <scopeId>` | Parent scope (a project belongs to a workspace, etc.) |
+| `--slug <slug>` | Slug used in path addressing (default: the name) |
+
+### `flect scope list`
+
+Print the scope tree with the active scope marked.
+
+```bash
+flect scope list
+```
+
+### `flect use <scope>`
+
+Switch the active scope — by slug path or by scope id.
+
+```bash
+flect use web/site/prod        # slug path: workspace/project/environment
+flect use scope-6f1c…          # or an explicit scope id
+```
+
+### `flect ps`
+
+Show the active context (scope, token, broker, config path) as a compact card.
+
+```bash
+flect ps
+```
+
+---
+
+## Project files
+
+### `flect init`
+
+Scaffold a `flect.toml` in the current directory (and git-ignore the local dev
+files).
+
+```bash
+flect init
+flect init --name myapp        # default: the directory name
+```
+
+### `flect bindings`
+
+List the bindings, apps, and services declared in `flect.toml`.
+
+```bash
+flect bindings
+```
+
+### `flect dev`
+
+Generate `flect.local.json` from `flect.toml` so `createEnv()` resolves bindings
+locally with no broker. See [Local development](/guides/local-dev/).
+
+```bash
+flect dev
+```
+
+---
+
+## Resources
+
+Each resource kind has the same four subcommands. `<ref>` is either the resource
+id or its public reference (e.g. `myapp-db-a1b2c3d4`).
+
+```bash
+flect db    create <name> | list | status <ref> | delete <ref>   # sqld / libsql
+flect kv    create <name> | list | status <ref> | delete <ref>   # Valkey / redis
+flect store create <name> | list | status <ref> | delete <ref>   # Garage / S3
+```
+
+- **`create`** provisions a resource in the active scope and prints the public
+  ref to put in `flect.toml` (`name = "…"`).
+- **`list`** shows the resources of that kind in the scope.
+- **`status <ref>`** prints the full resource record as JSON.
+- **`delete <ref>`** deprovisions the resource.
+
+```bash
+$ flect db create notes-db
+✓ created database "notes-db-a1b2c3d4" (provisioning)
+  flect.toml → name = "notes-db-a1b2c3d4"
+```
+
+Resource commands accept the connection flags below (`--broker`, `--token`,
+`--scope`).
+
+---
+
+## Deploy
+
+### `flect deploy`
+
+Realize `flect.toml` against the broker: provision any missing resources, bind
+them to the project, and deploy the app(s) to the cluster behind Traefik.
+
+```bash
+flect deploy
+flect deploy --scope <scopeId>          # deploy to a specific scope
+```
+
+| Flag | Description |
+|------|-------------|
+| `--broker <url>` | Broker URL (default: `FLECT_BROKER_URL` / config) |
+| `--token <token>` | Runtime token (default: `FLECT_TOKEN` / config) |
+| `--scope <scopeId>` | Target scope (default: the active scope) |
+
+At deploy time only `FLECT_TOKEN` and `FLECT_BROKER_URL` are injected into your
+container; the SDK resolves everything else at runtime.
+
+### `flect apps`
+
+List the apps deployed in the active scope (name, status, URL).
+
+```bash
+flect apps
+```
+
+---
+
+## Inspection
+
+### `flect resolve <name>`
+
+Inspect the manifest the broker returns for a binding — the same resolution the
+SDK performs — with secrets redacted. Useful for debugging bindings.
+
+```bash
+flect resolve DB
+```
+
+---
+
+## Config
+
+Config lives in `~/.flect/config.json`.
+
+```bash
+flect config set <key> <value>    # key: broker | token | scope | auth
+flect config get [key]            # print config (token masked)
+flect config path                 # print the config file path
+```
+
+```bash
+flect config set broker https://api.example.com
+```
+
+---
+
+## Connection flags
+
+Commands that talk to the broker accept:
+
+| Flag | Description |
+|------|-------------|
+| `--broker <url>` | Broker base URL |
+| `--token <token>` | Runtime / identity token |
+| `--scope <scopeId>` | Override the active scope for this call |
+
+The active scope is sent to the broker as the `X-Flect-Scope` header; identity
+tokens are not scope-bound, so tenant-level reads (like `scope list`) work
+without one.

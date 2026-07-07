@@ -1,14 +1,17 @@
 ---
 title: Quickstart
+description: From flect login to a live app in a few minutes.
+sidebar:
+  order: 1
 ---
 
-Deploy your first app on Flect in under 5 minutes.
+This walks you from a fresh login to a deployed app with a database and a cache.
 
 ## Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/) — to build and push your image
-- A container registry (GitHub Container Registry, Docker Hub, etc.)
-- Flect CLI installed
+- [Node.js](https://nodejs.org/) 20+ and the Flect CLI
+- [Docker](https://docs.docker.com/get-docker/) and a container registry
+  (GitHub Container Registry, Docker Hub, …) to build and push your image
 
 ## 1. Install the CLI
 
@@ -22,54 +25,45 @@ npm install -g @flect/cli
 flect login
 ```
 
-This opens a browser window. Sign in with your account and the CLI saves your token locally.
-
-## 3. Set up your workspace
-
-```bash
-# create or select an org
-flect org create --name my-org
-flect org use my-org
-
-# create a workspace and project
-flect ws create --name default
-flect ws use default
-
-flect proj create --name myproject
-flect proj use myproject
-
-# create a production environment
-flect env create --name production
-flect env use production
-```
-
-## 4. Create your resources
+This opens your browser for SSO. On success the CLI stores an identity token in
+`~/.flect/config.json`. Check where you're pointed anytime with:
 
 ```bash
-# database (SQLite, isolated per app)
-flect db create --name myapp-db
-
-# run migrations
-flect db migrate myapp-db --dir ./migrations
-
-# KV store (Redis-compatible cache)
-flect kv create --name myapp-cache
+flect whoami
 ```
 
-## 5. Create an app
+## 3. Pick a scope
+
+Flect organizes everything as a tree: **Org → Workspace → Project →
+Environment**. Your login gives you an org; create the rest and select an active
+scope. Resources and deploys always target the active scope.
 
 ```bash
-flect app create --name myapp
-# → myapp-abc123.up.flect.run
+flect scope create workspace web
+flect scope create project site --parent <workspace-id>
+flect scope create environment prod --parent <project-id>
+
+flect scope list                 # shows the tree; the active scope is marked
+flect use web/site/prod          # switch by slug path (or pass a scope id)
 ```
 
-## 6. Add a `flect.toml`
+`flect ps` prints the active context (scope, token, broker) at a glance.
 
-In your project root:
+## 4. Scaffold `flect.toml`
+
+In your project directory:
+
+```bash
+flect init
+```
+
+This writes a starter `flect.toml` and adds `flect.local.json` / `.flect/` to
+`.gitignore`:
 
 ```toml
-name = "myapp"
-port = 3000
+name    = "myapp"
+runtime = "node"
+port    = 3000
 
 [[databases]]
 binding = "DB"
@@ -80,9 +74,14 @@ binding = "CACHE"
 name    = "myapp-cache"
 ```
 
-The `binding` is the env var prefix your app uses. The `name` is the resource name in Flect.
+- `binding` is the name your **code** uses: `env.db('DB')`.
+- `name` is the Flect **resource** it maps to.
 
-## 7. Use the SDK in your app
+See the [flect.toml reference](/platform/flect-toml/) for every field.
+
+## 5. Write your app
+
+Your code only needs `@flect/sdk`. It never sees a URL or a secret.
 
 ```bash
 npm install @flect/sdk
@@ -91,35 +90,45 @@ npm install @flect/sdk
 ```typescript
 import { createEnv } from '@flect/sdk'
 
-const env   = createEnv()
-const db    = env.db('DB')      // reads DB_URL, DB_NAMESPACE, FLECT_TOKEN
-const cache = env.kv('CACHE')   // reads CACHE_URL, FLECT_TOKEN
+const env = createEnv()
+
+const db    = await env.db('DB')       // an official @libsql/client
+const cache = await env.kv('CACHE')    // an official ioredis client
+
+await db.execute('CREATE TABLE IF NOT EXISTS hits (n INTEGER)')
+await cache.set('ping', 'pong')
 ```
 
-## 8. Deploy
+Try it locally first — see [Local development](/guides/local-dev/).
 
-Build and push your image, then deploy from the directory containing `flect.toml`:
+## 6. Deploy
+
+Build and push your image, set it in `flect.toml` (or pass `--image` on the app
+entry), then:
 
 ```bash
 docker build -t ghcr.io/you/myapp:1.0.0 .
 docker push ghcr.io/you/myapp:1.0.0
 
-flect app deploy myapp --image ghcr.io/you/myapp:1.0.0
+flect deploy
 ```
 
+`flect deploy` reads `flect.toml`, **provisions** any missing resources,
+**binds** them to your project, and **deploys** your container to the cluster
+behind Traefik with an auto-issued TLS certificate.
+
 ```
-✓ Deployed: abc123
-  id      abc123
-  status  running
-  url     https://myapp-abc123.up.flect.run
-  image   ghcr.io/you/myapp:1.0.0
+✓ provisioned  database  myapp-db-a1b2c3d4
+✓ provisioned  kv        myapp-cache-e5f6g7h8
+✓ deployed     myapp     https://myapp-3f9k2a.up.flect.run   running
 ```
 
-Your app is live. All env vars (`DB_URL`, `CACHE_URL`, `FLECT_TOKEN`) are injected automatically — your code needs no configuration.
+At deploy time Flect injects exactly two env vars into your container —
+`FLECT_TOKEN` and `FLECT_BROKER_URL`. `createEnv()` uses them to resolve each
+binding to a scoped, short-lived connection at runtime.
 
 ## Next steps
 
-- [CLI Reference](../cli/index.md) — all available commands
-- [SDK Reference](../sdk/index.md) — database and KV API
-- [flect.toml Reference](../platform/flect-toml.md) — full config options
-- [Notes API example](./notes-api.md) — complete working example
+- [Local development](/guides/local-dev/) — `flect dev` + `createEnv()` offline.
+- [Notes API example](/guides/notes-api/) — a full app with DB + cache.
+- [CLI reference](/cli/) · [SDK reference](/sdk/) · [flect.toml](/platform/flect-toml/)

@@ -1,148 +1,86 @@
 ---
-title: KV Store
+title: KV stores
+description: Redis-compatible KV via Valkey, resolved as an official ioredis client.
 ---
 
-## What It Is
+## What it is
 
-Flect KV stores are **Redis-compatible**, powered by Valkey. Each KV store gets a key prefix enforced at the proxy layer — apps can only access their own keys even though all stores share the same Valkey instance.
+Flect KV stores are Redis-compatible, powered by **Valkey**. Each store has its
+own key namespace. `env.kv(binding)` returns an official
+[`ioredis`](https://github.com/redis/ioredis) client whose keys are transparently
+prefixed, so stores never collide.
 
-Compatible with: ioredis, node-redis, any Redis client.
-
-## Create a KV Store
+## Create
 
 ```bash
-flect kv create <name>          # e.g. flect kv create my-cache
-flect kv list                   # show KV stores in current env
+flect kv create my-cache
+flect kv list
+flect kv status <ref>
+flect kv delete <ref>
 ```
 
-## Bind to an App
-
-In `flect.toml`:
+## Bind
 
 ```toml
 [[kv]]
-binding = "CACHE"       # becomes CACHE_URL env var in the app
-name    = "my-cache"    # KV slug from flect kv list
+binding = "CACHE"
+name    = "my-cache"
 ```
 
-Multiple stores:
-```toml
-[[kv]]
-binding = "SESSION_STORE"
-name    = "sessions"
-
-[[kv]]
-binding = "RATE_LIMIT"
-name    = "rate-limiter"
-```
-
-## Use in Code
-
-Install SDK: `npm install @flect/sdk`
+## Use in code
 
 ```typescript
-import { kv } from '@flect/sdk'
+import { createEnv } from '@flect/sdk'
 
-// kv() returns an ioredis client, pre-configured from CACHE_URL
-const cache = kv()
+const env   = createEnv()
+const cache = await env.kv('CACHE')   // official ioredis client
 
-// String operations
-await cache.set('user:123', JSON.stringify(user))
-await cache.set('session:abc', token, 'EX', 3600)   // expires in 1h
-const val = await cache.get('user:123')
+// strings + TTL
+await cache.set('session:abc', token, 'EX', 3600)   // 1h
+const val = await cache.get('session:abc')
 await cache.del('session:abc')
 
-// Counters
+// counters, lists, hashes, sets — full ioredis API
 await cache.incr('hits:today')
-const count = await cache.get('hits:today')
-
-// Lists
 await cache.lpush('queue:jobs', JSON.stringify(job))
-const next = await cache.rpop('queue:jobs')
-
-// Hash maps
-await cache.hset('config', 'theme', 'dark', 'lang', 'tr')
-const theme = await cache.hget('config', 'theme')
-
-// Sets
+await cache.hset('config', 'theme', 'dark')
 await cache.sadd('active:users', userId)
-const isActive = await cache.sismember('active:users', userId)
-
-// TTL
-await cache.expire('temp:key', 300)   // 5 minutes
-const ttl = await cache.ttl('temp:key')
 ```
 
-### With Raw ioredis
+## Common patterns
+
+### Cache-aside
 
 ```typescript
-import Redis from 'ioredis'
-
-const cache = new Redis(process.env['CACHE_URL']!)
-
-// Keys are automatically prefixed by flect-proxy — use short keys
-await cache.set('my-key', 'value')  // stored as <prefix>:my-key in Valkey
-```
-
-## Common Patterns
-
-### Session Storage
-
-```typescript
-import { kv } from '@flect/sdk'
-
-const store = kv()
-
-async function createSession(userId: string): Promise<string> {
-  const sessionId = crypto.randomUUID()
-  await store.set(`session:${sessionId}`, userId, 'EX', 86400)  // 24h
-  return sessionId
-}
-
-async function getSession(sessionId: string): Promise<string | null> {
-  return store.get(`session:${sessionId}`)
-}
-```
-
-### Rate Limiting
-
-```typescript
-async function checkRateLimit(ip: string, limit = 100): Promise<boolean> {
-  const key   = `rl:${ip}:${Math.floor(Date.now() / 60000)}`  // per minute
-  const count = await store.incr(key)
-  if (count === 1) await store.expire(key, 60)
-  return count <= limit
-}
-```
-
-### Caching
-
-```typescript
-async function getCached<T>(key: string, fetch: () => Promise<T>, ttl = 300): Promise<T> {
-  const cached = await store.get(key)
-  if (cached) return JSON.parse(cached) as T
-  const data = await fetch()
-  await store.set(key, JSON.stringify(data), 'EX', ttl)
+async function getCached<T>(key: string, load: () => Promise<T>, ttl = 300): Promise<T> {
+  const hit = await cache.get(key)
+  if (hit) return JSON.parse(hit) as T
+  const data = await load()
+  await cache.set(key, JSON.stringify(data), 'EX', ttl)
   return data
 }
 ```
 
-## Local Development
+### Rate limiting
 
-```bash
-# .env.local — local Redis/Valkey or redis-memory
-CACHE_URL=redis://localhost:6379
-
-# Or use a local Valkey via Docker
-docker run -d -p 6379:6379 valkey/valkey:8-alpine
+```typescript
+async function underLimit(ip: string, limit = 100): Promise<boolean> {
+  const key = `rl:${ip}:${Math.floor(Date.now() / 60000)}`   // per minute
+  const n = await cache.incr(key)
+  if (n === 1) await cache.expire(key, 60)
+  return n <= limit
+}
 ```
 
-## Key Isolation
+## Isolation
 
-Keys are automatically prefixed at the proxy layer. You do not need to manually prefix keys — `KEYS *` and `SCAN` also only return keys belonging to your KV store.
+Keys are prefixed with the store's namespace automatically — use short, natural
+keys. `KEYS`/`SCAN` only ever see your store's keys.
 
-## Limits
+## Local development
 
-- All Redis-compatible commands supported
-- Key prefix isolation enforced at proxy — no cross-store access possible
-- Max memory: shared Valkey instance, configured per environment
+```bash
+flect dev     # createEnv() resolves CACHE locally
+docker run -d -p 6379:6379 valkey/valkey:8-alpine
+# VALKEY_URL=redis://localhost:6379  (default)
+```

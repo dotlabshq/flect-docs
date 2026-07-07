@@ -1,71 +1,105 @@
 ---
-title: Local Development
+title: Local development
+description: Run createEnv() with no broker by generating flect.local.json from flect.toml.
+sidebar:
+  order: 2
 ---
 
-Run your Flect app locally while pointing at real or local resources.
+The same `createEnv()` code that runs in production runs locally — Flect just
+resolves bindings from a **local config file** instead of the broker. No token,
+no network, no broker required.
 
-## Option 1: Local services with Docker
+## 1. Generate `flect.local.json`
 
-Run sqld and Valkey locally:
+From the directory with your `flect.toml`:
 
 ```bash
-# sqld (libSQL server)
-docker run -d \
-  --name sqld \
-  -p 8080:8080 \
+flect dev
+```
+
+This reads your bindings and writes `flect.local.json` — a map of each binding
+to a connection built from `${ENV}` placeholders. **No secrets are written**;
+they come from your environment at runtime.
+
+```json
+{
+  "_generatedBy": "flect dev — local binding map; secrets come from ${ENV}, never this file",
+  "bindings": {
+    "DB": {
+      "kind": "database",
+      "provider": "libsql",
+      "connection": { "url": "${DB_URL:-:memory:}" }
+    },
+    "CACHE": {
+      "kind": "kv",
+      "provider": "redis",
+      "connection": {
+        "url": "${VALKEY_URL:-redis://localhost:6379}",
+        "keyPrefix": "myapp-myapp-cache:"
+      }
+    },
+    "FILES": {
+      "kind": "storage",
+      "provider": "s3",
+      "connection": {
+        "endpoint": "${S3_ENDPOINT:-http://localhost:9000}",
+        "region": "${S3_REGION:-us-east-1}",
+        "accessKeyId": "${S3_ACCESS_KEY_ID}",
+        "secretAccessKey": "${S3_SECRET_ACCESS_KEY}",
+        "bucket": "${FILES_BUCKET:-myapp-uploads}",
+        "forcePathStyle": true
+      }
+    }
+  }
+}
+```
+
+`flect.local.json` is git-ignored by `flect init`. When no broker URL is
+configured, `createEnv()` loads it automatically; you can also force it with
+`createEnv({ local: true })`.
+
+## 2. Run local backing services (optional)
+
+The defaults above fall back to an in-memory database and localhost services.
+To use real local engines:
+
+```bash
+# sqld (libsql) with namespaces
+docker run -d --name sqld -p 8080:8080 \
   ghcr.io/tursodatabase/libsql-server:latest \
   /bin/sqld --enable-namespaces
 
-# Valkey
-docker run -d \
-  --name valkey \
-  -p 6379:6379 \
-  valkey/valkey:8-alpine \
-  valkey-server --save "" --appendonly no
+# Valkey (Redis-compatible)
+docker run -d --name valkey -p 6379:6379 valkey/valkey:8-alpine
+
+# MinIO (S3-compatible) — only if you use object storage
+docker run -d --name minio -p 9000:9000 -p 9001:9001 \
+  -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+  quay.io/minio/minio server /data --console-address ":9001"
 ```
 
-Then set env vars:
+## 3. Provide the env values
+
+Only the values your bindings reference are needed. A database defaults to
+`:memory:`, so the simplest setup is nothing at all. For persistent local data:
 
 ```bash
 # .env.local
 DB_URL=http://localhost:8080
-DB_NAMESPACE=myapp
-CACHE_URL=redis://localhost:6379
-CACHE_PREFIX=myapp:
+VALKEY_URL=redis://localhost:6379
+# storage bindings only:
+S3_ENDPOINT=http://localhost:9000
+S3_ACCESS_KEY_ID=minioadmin
+S3_SECRET_ACCESS_KEY=minioadmin
 ```
 
-No `FLECT_TOKEN` needed — the SDK skips proxy auth when `FLECT_TOKEN` is absent.
-
-## Option 2: Point at your production resources
-
-You can run your app locally while talking to your real Flect database and KV store, bypassing the proxy. Get the connection details:
-
-```bash
-flect db get myapp-db --output json
-flect kv get myapp-cache --output json
-```
-
-Then set:
-
-```bash
-# .env.local (direct, no proxy)
-DB_URL=http://100.64.0.1:8081
-DB_NAMESPACE=<sqld-namespace>
-CACHE_URL=redis://100.64.0.1:6380
-CACHE_PREFIX=<key-prefix>
-```
-
-> **Note:** Direct access bypasses flect-proxy. Suitable for development only — do not expose these addresses publicly.
-
-## Running your app
-
-With [tsx](https://github.com/privatenumber/tsx) for TypeScript:
+## 4. Run your app
 
 ```bash
 node --env-file=.env.local --import tsx/esm src/index.ts
 ```
 
-Or with the script in `package.json`:
+Or as a script:
 
 ```json
 {
@@ -75,16 +109,6 @@ Or with the script in `package.json`:
 }
 ```
 
-## Migrations in development
-
-Run migrations against your local sqld:
-
-```bash
-flect db migrate myapp-db --dir migrations
-```
-
-Or apply SQL files directly if working locally:
-
-```bash
-sqlite3 local.db < migrations/0001_create_notes.sql
-```
+Because `createEnv()` returns the **official** client for each provider, the
+same libsql / ioredis / S3 code works identically against your local engines and
+against the resources Flect provisions in production.

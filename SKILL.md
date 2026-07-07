@@ -4,106 +4,118 @@ title: Flect Platform Skill
 
 ## Purpose
 
-This skill helps you build and deploy projects on Flect — a developer platform for apps, databases, KV stores, and static pages.
+This skill helps you build and deploy projects on Flect — a developer platform
+for apps, databases, KV stores, and object storage. Apps call `createEnv()`; the
+platform resolves each binding to a scoped, official client at runtime.
 
 ## Setup
 
-Fetch current docs at session start:
+Fetch the current instructions at session start:
+
 ```
 GET https://raw.githubusercontent.com/dotlabshq/flect-docs/main/AGENTS.md
 ```
 
-Load component-specific skills as needed:
+Load component skills as needed:
+
 ```
 GET https://raw.githubusercontent.com/dotlabshq/flect-docs/main/skills/db.md
 GET https://raw.githubusercontent.com/dotlabshq/flect-docs/main/skills/kv.md
+GET https://raw.githubusercontent.com/dotlabshq/flect-docs/main/skills/store.md
 GET https://raw.githubusercontent.com/dotlabshq/flect-docs/main/skills/app.md
-GET https://raw.githubusercontent.com/dotlabshq/flect-docs/main/skills/page.md
 ```
 
 ## Architecture
 
 ```
 Flect Platform
-├── Control Plane (flect-api)
-│   ├── Auth: user tokens (multi-org) + service tokens (org-scoped)
-│   ├── Resources: apps, databases, kvs, pages
+├── Control plane — broker (flect-api), event-sourced
+│   ├── Auth: SSO identity tokens (per user); runtime tokens (per deploy, scoped)
+│   ├── Resources: apps, databases, KV, object storage
+│   ├── Resolution: binding → short-lived, scoped manifest (has expiresAt)
 │   └── Deploy: Nomad job submission
 │
-├── Data Plane
-│   ├── flect-proxy (port 7001: HTTP→sqld, port 7002: RESP→Valkey)
-│   ├── sqld (libsql-compatible SQLite server, multi-namespace)
-│   └── Valkey (Redis-compatible, key-prefix isolation per KV store)
+├── Substrate
+│   ├── sqld (libsql, multi-namespace) — x-namespace header per request
+│   ├── Valkey (Redis-compatible) — key-prefix per store
+│   └── Garage (S3-compatible) — one bucket + key pair per store
 │
-├── Routing
-│   ├── Traefik (TLS termination, Consul service discovery)
-│   └── Cloudflare DNS (*.up.flect.run wildcard)
+├── Routing — Traefik (TLS) + Consul discovery; *.up.flect.run
 │
 └── SDK (@flect/sdk)
-    ├── db() → libsql client pre-configured with DB_URL + FLECT_TOKEN
-    └── kv() → ioredis client pre-configured with CACHE_URL
+    ├── createEnv()          → reads FLECT_BROKER_URL + FLECT_TOKEN
+    ├── await env.db(name)    → official @libsql/client (scoped)
+    ├── await env.kv(name)    → official ioredis (prefixed)
+    └── await env.store(name) → official @aws-sdk/client-s3 (bucket-scoped)
 ```
 
-## Security Model
+## Security model
 
-- **User token**: one token per user, works across all orgs the user is a member of
-- **Service token**: org-scoped, for CI/CD pipelines (`flect token create`)
-- **App proxy token**: per-app token injected as `FLECT_TOKEN`, enforces namespace/prefix isolation at the proxy layer
+- **Identity token** — from `flect login` (SSO), stored in `~/.flect/config.json`;
+  identifies a user across scopes. Not scope-bound; the active scope travels in
+  the `X-Flect-Scope` header.
+- **Runtime token** — injected into a deployed app as `FLECT_TOKEN`; scoped, and
+  used by `createEnv()` to resolve bindings through the broker.
+- Apps never receive raw DB/KV/S3 credentials. Each resolution returns a
+  short-lived, scoped connection; isolation is enforced at the substrate
+  (sqld namespace, KV prefix, Garage bucket key).
 
-Apps never get direct DB/KV credentials — all access goes through `flect-proxy` which validates the app's `FLECT_TOKEN` and enforces isolation.
-
-## Resource Hierarchy
+## Scope hierarchy
 
 ```
-Org
-└── Workspace (default: "default")
-    └── Project (default: "main")
-        └── Environment (default: "production")
+Org (your tenant, from login)
+└── Workspace
+    └── Project
+        └── Environment
             ├── Apps
             ├── Databases
-            ├── KV Stores
-            └── Pages
+            ├── KV stores
+            └── Object stores
 ```
 
-## CLI Quick Reference
+Select the active scope with `flect use <workspace>/<project>/<environment>`.
+
+## CLI quick reference
 
 ```bash
-# Context
+# Auth & context
 flect login
-flect use <org>/<ws>/<proj>    # set active context
-flect ps                        # show current context
+flect use web/site/prod        # set active scope (slug path or scope id)
+flect ps                        # show active context
+flect whoami
 
-# Apps
-flect app create <name>
-flect app deploy <name> --image <img>:<tag>
-flect app list
-flect app logs <name>
+# Scopes
+flect scope create workspace <name>
+flect scope create project <name> --parent <workspace-id>
+flect scope create environment <name> --parent <project-id>
+flect scope list
 
-# Databases
-flect db create <name>
-flect db list
-flect db shell <name>           # interactive SQL shell
+# Project
+flect init                      # scaffold flect.toml
+flect dev                       # generate flect.local.json (local createEnv)
+flect bindings                  # list declared bindings/apps/services
+flect deploy                    # provision + bind + deploy
 
-# KV Stores
-flect kv create <name>
-flect kv list
+# Resources  (kind = db | kv | store)
+flect <kind> create <name>
+flect <kind> list
+flect <kind> status <ref>
+flect <kind> delete <ref>
 
-# Pages
-flect page create <name>
-flect page deploy <name> --repo github.com/<owner>/<repo>
-flect page list
+# Apps & inspection
+flect apps                      # list deployed apps
+flect resolve <binding>         # inspect a binding manifest (secrets redacted)
 
-# Service Tokens
-flect token create <name>
-flect token list
-flect token revoke <id>
+# Config (~/.flect/config.json)
+flect config set <broker|token|scope|auth> <value>
+flect config get [key]
 ```
 
-## Routing to Component Skills
+## Routing to component skills
 
 | Task | Load skill |
 |------|-----------|
 | Add a database | `skills/db.md` |
 | Add a KV store | `skills/kv.md` |
+| Add object storage | `skills/store.md` |
 | Deploy an app | `skills/app.md` |
-| Deploy a static site | `skills/page.md` |
