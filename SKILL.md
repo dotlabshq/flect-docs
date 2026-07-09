@@ -3,7 +3,7 @@ name: flect
 description: >-
   Build and deploy an app plus its backing resources (database, KV, object
   storage) on the Flect platform. Use when the user wants to ship a service on
-  Flect, wire up a Flect database/KV/store, write flect.toml, use @flect/sdk
+  Flect, wire up a Flect database/KV/store, write flect.toml, use @getflect/sdk
   (createEnv), or run the flect CLI (login, scope, deploy).
 ---
 
@@ -28,7 +28,7 @@ listed at the bottom.
 - Shipping a web service / API on Flect.
 - Adding a database (sqld/libsql), KV (Valkey), or object store (Garage/S3).
 - Writing or fixing a `flect.toml`.
-- Using `@flect/sdk` (`createEnv`) or the `flect` CLI.
+- Using `@getflect/sdk` (`createEnv`) or the `flect` CLI.
 
 ## Mental model
 
@@ -49,7 +49,7 @@ Org → Workspace → Project → Environment      (the scope tree)
 
 ```bash
 # 1. Install + authenticate
-npm install -g @flect/cli
+npm install -g @getflect/cli
 flect login                         # SSO, stored in ~/.flect/config.json
 flect whoami                        # confirm identity + where you're pointed
 
@@ -131,7 +131,7 @@ app     = "auth"
 ## SDK — the rules that matter
 
 ```typescript
-import { createEnv } from '@flect/sdk'
+import { createEnv } from '@getflect/sdk'
 
 const env = createEnv()
 

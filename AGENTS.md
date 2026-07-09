@@ -76,10 +76,10 @@ optional `[vars]` and `[[services]]`. See `platform/flect-toml.md`.
 
 ## SDK usage
 
-Install: `npm install @flect/sdk`
+Install: `npm install @getflect/sdk`
 
 ```typescript
-import { createEnv } from '@flect/sdk'
+import { createEnv } from '@getflect/sdk'
 
 const env = createEnv()
 

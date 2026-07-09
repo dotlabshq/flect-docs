@@ -6,7 +6,7 @@ description: Every flect command — login, scopes, resources, deploy, and confi
 Install the CLI:
 
 ```bash
-npm install -g @flect/cli
+npm install -g @getflect/cli
 ```
 
 The CLI is a client of the Flect control plane (the *broker*). It reads its

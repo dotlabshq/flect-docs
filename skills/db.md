@@ -34,7 +34,7 @@ migrations_dir = "migrations"   # optional: where your .sql files live
 ## Use in code
 
 ```typescript
-import { createEnv } from '@flect/sdk'
+import { createEnv } from '@getflect/sdk'
 
 const env = createEnv()
 const db  = await env.db('DB')   // binding name from flect.toml

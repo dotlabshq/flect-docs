@@ -83,11 +83,11 @@ The container must:
 - Respond to `GET /healthz` with `200` (Traefik health check).
 - Bundle its dependencies (no workspace symlinks in the final image).
 
-## Using @flect/sdk
+## Using @getflect/sdk
 
 ```typescript
 import { Hono } from 'hono'
-import { createEnv } from '@flect/sdk'
+import { createEnv } from '@getflect/sdk'
 
 const env = createEnv()
 const db  = await env.db('DB')      // official @libsql/client

@@ -30,7 +30,7 @@ name    = "my-cache"
 ## Use in code
 
 ```typescript
-import { createEnv } from '@flect/sdk'
+import { createEnv } from '@getflect/sdk'
 
 const env   = createEnv()
 const cache = await env.kv('CACHE')   // official ioredis client

@@ -25,7 +25,7 @@ Your application code stays clean: it calls `createEnv()` and asks for a binding
 by name. It never sees a connection string, a port, or a credential.
 
 ```typescript
-import { createEnv } from '@flect/sdk'
+import { createEnv } from '@getflect/sdk'
 
 const env = createEnv()
 const db  = await env.db('DB')        // an official @libsql/client
@@ -53,7 +53,7 @@ broker, scoped to your project, and never written into your image.
 - **Databases** — SQLite-compatible via sqld/libsql, isolated per resource.
 - **KV** — Redis-compatible via Valkey, key-prefixed per resource.
 - **Object storage** — S3-compatible via Garage, one bucket + key pair per resource.
-- **SDK** — `@flect/sdk` hands you the *official* client for each resource
+- **SDK** — `@getflect/sdk` hands you the *official* client for each resource
   (`@libsql/client`, `ioredis`, `@aws-sdk/client-s3`), pre-wired and scoped.
 - **Scopes** — an Org → Workspace → Project → Environment tree, so the same
   code deploys to `dev`, `staging`, and `prod` with isolated resources.

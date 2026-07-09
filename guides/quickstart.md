@@ -16,7 +16,7 @@ This walks you from a fresh login to a deployed app with a database and a cache.
 ## 1. Install the CLI
 
 ```bash
-npm install -g @flect/cli
+npm install -g @getflect/cli
 ```
 
 ## 2. Log in
@@ -81,14 +81,14 @@ See the [flect.toml reference](/platform/flect-toml/) for every field.
 
 ## 5. Write your app
 
-Your code only needs `@flect/sdk`. It never sees a URL or a secret.
+Your code only needs `@getflect/sdk`. It never sees a URL or a secret.
 
 ```bash
-npm install @flect/sdk
+npm install @getflect/sdk
 ```
 
 ```typescript
-import { createEnv } from '@flect/sdk'
+import { createEnv } from '@getflect/sdk'
 
 const env = createEnv()
 
@@ -130,5 +130,5 @@ binding to a scoped, short-lived connection at runtime.
 ## Next steps
 
 - [Local development](/guides/local-dev/) — `flect dev` + `createEnv()` offline.
-- [Notes API example](/guides/notes-api/) — a full app with DB + cache.
+- [Notes walkthrough](/guides/notes/) — a full app with DB + cache.
 - [CLI reference](/cli/) · [SDK reference](/sdk/) · [flect.toml](/platform/flect-toml/)

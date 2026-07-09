@@ -7,4 +7,4 @@ sidebar:
 
 - [Quickstart](/guides/quickstart/) — from `flect login` to a live app.
 - [Local development](/guides/local-dev/) — run `createEnv()` with no broker.
-- [Notes API example](/guides/notes-api/) — a complete Hono app using a database + KV.
+- [Notes walkthrough](/guides/notes/) — a complete Hono app using a database + KV.

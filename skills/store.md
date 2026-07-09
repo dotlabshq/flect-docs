@@ -31,7 +31,7 @@ name    = "my-uploads"
 ## Use in code
 
 ```typescript
-import { createEnv } from '@flect/sdk'
+import { createEnv } from '@getflect/sdk'
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 
 const env = createEnv()

@@ -22,7 +22,7 @@ short-lived connection at runtime.
 ## Quick start
 
 ```bash
-npm install -g @flect/cli
+npm install -g @getflect/cli
 
 flect login                    # SSO, stored in ~/.flect/config.json
 flect use acme/web/prod        # org / workspace / project / environment
@@ -33,7 +33,7 @@ flect deploy                   # provision resources, bind, deploy
 ## SDK
 
 ```typescript
-import { createEnv } from '@flect/sdk'
+import { createEnv } from '@getflect/sdk'
 
 const env = createEnv()
 
