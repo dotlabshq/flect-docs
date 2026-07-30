@@ -93,13 +93,15 @@ your own domain by setting `[app].domain` and pointing a CNAME at it.
 
 ## Plans and limits
 
-Every org starts on the **hobby** plan. Limits are enforced org-wide at the
-control plane; exceeding one returns HTTP `402` with a clear message.
+Limits are enforced org-wide at the control plane; exceeding one returns HTTP
+`402` with a clear message. Until billing lands there is no plan selection, so
+**every org currently defaults to the Team plan** — generous headroom while the
+platform is pre-billing. Real plan selection and downgrades arrive with billing.
 
 | Plan | Apps | Databases | KV | Storage |
 |------|------|-----------|----|---------|
 | Hobby | 3 | 1 | 1 | 1 |
 | Pro | 10 | 3 | 3 | 3 |
-| Team | 25 | 10 | 10 | 10 |
+| **Team (current default)** | 25 | 10 | 10 | 10 |
 
 Deprovisioned resources don't count toward the limit.

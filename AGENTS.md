@@ -36,12 +36,13 @@ image or the code.
 
 ```
 1. flect login
-2. flect use <workspace>/<project>/<environment>   # active scope
-3. flect init                                       # scaffold flect.toml
-4. Declare bindings in flect.toml
-5. Write app code with createEnv()
-6. flect dev        # optional: run locally with flect.local.json
-7. flect deploy     # provisions resources, binds, deploys the container
+2. flect init                                       # scaffold flect.toml
+3. flect proj create --org <org> --ws <ws> --name <n> --slug <s>   # create the scope
+4. flect use <org>/<ws>/<proj>                      # THIS is the deploy target (not the toml `scope`)
+5. Declare bindings in flect.toml
+6. Write app code with createEnv()
+7. flect dev        # optional: run locally with flect.local.json
+8. flect deploy     # provisions resources, binds, deploys to the active context
 ```
 
 Create resources explicitly with `flect db|kv|store create <name>` (each prints
@@ -56,6 +57,7 @@ Single-app form:
 name    = "my-app"
 runtime = "node"
 port    = 3000
+scope   = "my-app/main/prod"    # reserved/ignored — deploy target comes from `flect use`
 
 [[databases]]
 binding        = "DB"           # the name code passes to env.db()
@@ -108,8 +110,12 @@ Rules to get right:
 
 ## Skills
 
-For component detail, load the relevant skill:
-- Database: `skills/db.md`
-- KV store: `skills/kv.md`
-- Object storage: `skills/store.md`
-- App deploy: `skills/app.md`
+Skills are a small library under `skills/`. Start at the hub, then lazy-load the
+one component you need:
+
+- Hub: `skills/flect/SKILL.md`
+- App deploy: `skills/flect-app/SKILL.md`
+- Database: `skills/flect-db/SKILL.md`
+- KV store: `skills/flect-kv/SKILL.md`
+- Object storage: `skills/flect-store/SKILL.md`
+- Static / docs sites: `skills/flect-pages/SKILL.md`

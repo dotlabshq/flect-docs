@@ -1,7 +1,14 @@
 ---
-title: Object storage
-description: S3-compatible object storage via Garage, resolved as an official @aws-sdk/client-s3 client.
+name: flect-store
+description: >-
+  Flect object storage — S3-compatible (Garage), resolved as an official
+  @aws-sdk/client-s3 client via env.store(). Use for file uploads/downloads,
+  presigned URLs, or binding [[stores]] in flect.toml.
 ---
+
+# Flect · Object storage
+
+Part of the [flect](../flect/SKILL.md) skill set.
 
 ## What it is
 
@@ -36,20 +43,16 @@ import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sd
 
 const env = createEnv()
 const s3  = await env.store('FILES')          // configured S3Client
-const Bucket = process.env.FILES_BUCKET!       // the resolved bucket name
+const Bucket = process.env.FILES_BUCKET!       // the resolved bucket name (<BINDING>_BUCKET)
 
-// upload
-await s3.send(new PutObjectCommand({
-  Bucket, Key: 'hello.txt', Body: 'Hello, Flect!', ContentType: 'text/plain',
-}))
-
-// download
+await s3.send(new PutObjectCommand({ Bucket, Key: 'hello.txt', Body: 'Hello, Flect!', ContentType: 'text/plain' }))
 const { Body } = await s3.send(new GetObjectCommand({ Bucket, Key: 'hello.txt' }))
 const text = await Body?.transformToString()
-
-// delete
 await s3.send(new DeleteObjectCommand({ Bucket, Key: 'hello.txt' }))
 ```
+
+The bucket name is **not** the binding — read it from `process.env.<BINDING>_BUCKET`.
+It's the real `S3Client`, so use official commands, not `store.put()`.
 
 ### Presigned URLs (direct browser upload/download)
 
@@ -66,9 +69,9 @@ const url = await getSignedUrl(
 
 ## Isolation
 
-Each store has its own Garage API key, scoped to its own bucket. A key for store
-A cannot touch store B — enforced by Garage. Garage requires path-style
-addressing, which the resolved client already sets (`forcePathStyle: true`).
+Each store has its own Garage API key, scoped to its own bucket — a key for store
+A cannot touch store B. Garage requires path-style addressing, which the resolved
+client already sets (`forcePathStyle: true`).
 
 ## Local development
 
@@ -82,3 +85,8 @@ docker run -d -p 9000:9000 -p 9001:9001 \
 Set `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` (see
 [Local development](/guides/local-dev/)) and create the bucket in the MinIO
 console at `http://localhost:9001`.
+
+## Related skills
+
+- [flect-app](../flect-app/SKILL.md) · [flect](../flect/SKILL.md).
+- [flect-pages](../flect-pages/SKILL.md) — for serving a whole static site.

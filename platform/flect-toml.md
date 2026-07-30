@@ -5,21 +5,22 @@ sidebar:
   order: 1
 ---
 
-`flect.toml` lives at the root of your project. It declares the **bindings**
-your code resolves (`env.db('DB')`), the **apps** to deploy, and how they're
-wired. `flect deploy` reads it to provision, bind, and deploy. The SDK never
-reads this file — it's a CLI/deploy artifact.
+`flect.toml` lives at the root of your project. It declares **where the project
+lives** (its scope), the **bindings** your code resolves (`env.db('DB')`), the
+**apps** to deploy, and how they're wired. `flect deploy` reads it to provision,
+bind, and deploy. The SDK never reads this file — it's a CLI/deploy artifact.
 
 Scaffold one with `flect init`.
 
 ## Single-app form
 
-The common case: one app, a top-level `name`, and its bindings.
+The common case: one app, a top-level `name`, a `scope`, and its bindings.
 
 ```toml
 name    = "myapp"
 runtime = "node"
 port    = 3000
+# target set with `flect use` (see Scope below); no scope field needed here
 
 [[databases]]
 binding        = "DB"
@@ -38,8 +39,31 @@ name    = "myapp-uploads"
 | Field | Description |
 |-------|-------------|
 | `name` | Project / app name (required unless using `[app]`). |
+| `scope` | Reserved — deploy target comes from `flect use` (see Scope below). |
+| `region` | Deployment region — only `eu` exists today (the default); reserved for more. |
 | `runtime` | Informational (e.g. `node`). |
 | `port` | Port your container listens on. |
+
+## Scope — where the project lives
+
+Every resource and app lands in a **scope** (`org → workspace → project →
+environment`). Tenancy is managed by the identity plane (org-service); create
+the tree with `flect org/ws/proj/env` and pick the target with `flect use`:
+
+```bash
+flect org create --name Acme --slug acme
+flect ws  create --org acme --name Web --slug web
+flect proj create --org acme --ws web --name Notes --slug notes
+flect use acme/web/notes/prod        # this is the deploy target
+```
+
+`flect deploy` targets your **active context** (from `flect use`), sent to the
+broker as `X-Org-Id` + `X-Flect-Scope`. Override it for one deploy with
+`--scope <scopeId>`. Precedence: `--scope` flag > active context.
+
+> The top-level `scope = "…"` field in `flect.toml` is reserved for a future
+> org-service path resolution; today the deploy target comes from `flect use`
+> (or `--scope`), not the toml field.
 
 ## Bindings
 
@@ -140,3 +164,17 @@ environment as the variable named by `binding`.
 |-------|-------------|
 | `binding` | Env var name to inject. |
 | `app` | The sibling app whose URL is injected. |
+
+## `[page]` — a static site
+
+Serve a built static directory over Caddy on Nomad (no runtime, no bindings).
+
+```toml
+[page]
+name = "docs"
+dir  = "./dist"            # your built static output
+# domain = "docs.acme.com" # optional custom domain (else a generated hostname)
+```
+
+Deploy it with `flect page deploy`. The directory is bind-mounted read-only into
+a `caddy:2-alpine` file-server and routed at its hostname behind Traefik.

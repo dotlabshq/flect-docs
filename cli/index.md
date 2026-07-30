@@ -1,6 +1,6 @@
 ---
 title: CLI Reference
-description: Every flect command — login, scopes, resources, deploy, and config.
+description: Every flect command — login, tenancy, resources, deploy, pages, and config.
 ---
 
 Install the CLI:
@@ -11,7 +11,18 @@ npm install -g @getflect/cli
 
 The CLI is a client of the Flect control plane (the *broker*). It reads its
 connection from, in order of precedence: command flags → environment
-(`FLECT_BROKER_URL`, `FLECT_TOKEN`) → `~/.flect/config.json` → defaults.
+(`FLECT_URL`, `FLECT_BROKER_URL`, `FLECT_TOKEN`) → `~/.flect/config.json` →
+defaults.
+
+**Point the CLI at your platform once.** A single gateway origin fronts the
+whole plane — identity at `/v1/*`, the broker at `/`. Set it after logging in
+and every command (identity *and* broker) derives from it:
+
+```bash
+flect config set gatewayUrl https://flect.cloud   # the hosted control plane
+                                                  # (self-hosted: your gateway origin)
+flect doctor                                       # verify plane + broker + token + scope
+```
 
 ---
 
@@ -45,50 +56,55 @@ flect whoami
 
 ---
 
-## Scopes
+## Tenancy — org, workspace, project, environment
 
-Everything lives in a tree: **Org → Workspace → Project → Environment**. Your
-login gives you the org; you create the rest. Resource and deploy commands act
-on the **active scope**.
+Everything lives in a tree: **Org → Workspace → Project → Environment**. Tenancy
+is managed by the identity plane (org-service); the CLI has one noun command per
+level. Your login gives you an org; you create the rest. Resource and deploy
+commands act on the **active context** you set with `flect use`.
 
-### `flect scope create <kind> <name>`
+### `flect org` · `flect ws` · `flect proj` · `flect env`
 
-`kind` is `workspace`, `project`, or `environment`. Nest with `--parent`.
+Each noun command lists on its own and takes `create` / `get` / `update` /
+`delete`. Parents are named, not passed as ids.
 
 ```bash
-flect scope create workspace web
-flect scope create project site --parent <workspace-id>
-flect scope create environment prod --parent <project-id> --slug prod
+flect org  create --name Acme --slug acme         # (bare `flect org` lists)
+flect ws   create --org acme --name Web --slug web
+flect proj create --org acme --ws web --name Site --slug site
+flect env  create --org acme --ws web --proj site --name prod   # `use` auto-creates `production`
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--parent <scopeId>` | Parent scope (a project belongs to a workspace, etc.) |
-| `--slug <slug>` | Slug used in path addressing (default: the name) |
+### `flect use <path>`
 
-### `flect scope list`
-
-Print the scope tree with the active scope marked.
+Set the active org / workspace / project / environment. Resource and deploy
+commands target it (sent to the broker as `X-Org-Id` + `X-Flect-Scope`).
 
 ```bash
-flect scope list
+flect use acme               # just the org
+flect use acme/web/site/prod # down to an environment
+flect use                    # interactive picker
 ```
 
-### `flect use <scope>`
+### `flect ls`
 
-Switch the active scope — by slug path or by scope id.
+Print the whole org → workspace → project tree, active node marked.
 
 ```bash
-flect use web/site/prod        # slug path: workspace/project/environment
-flect use scope-6f1c…          # or an explicit scope id
+flect ls
 ```
 
 ### `flect ps`
 
-Show the active context (scope, token, broker, config path) as a compact card.
+Show the active context (org path, token, broker, config path) as a compact card.
+
+### `flect access`
+
+Inspect the PDP that authorizes your actions (roles resolved by org-service).
 
 ```bash
-flect ps
+flect access role <scopeId>          # your effective role at a scope
+flect access check <app> <action> <scopeId>
 ```
 
 ---
@@ -147,8 +163,8 @@ $ flect db create notes-db
   flect.toml → name = "notes-db-a1b2c3d4"
 ```
 
-Resource commands accept the connection flags below (`--broker`, `--token`,
-`--scope`).
+Resource commands act on the **active context** (`flect use`) and accept the
+connection flags below (`--broker`, `--token`, `--scope`).
 
 ---
 
@@ -157,18 +173,24 @@ Resource commands accept the connection flags below (`--broker`, `--token`,
 ### `flect deploy`
 
 Realize `flect.toml` against the broker: provision any missing resources, bind
-them to the project, and deploy the app(s) to the cluster behind Traefik.
+them to the project, and deploy the app(s) to the cluster behind Traefik. It
+targets your **active context** (set with `flect use`).
 
 ```bash
+flect use acme/web/site/prod            # pick the target context first
 flect deploy
-flect deploy --scope <scopeId>          # deploy to a specific scope
+flect deploy --scope <scopeId>          # or target an explicit org-service scope id
 ```
+
+The deploy target is the active org-service scope (env → project → …) from
+`flect use`; `--scope` overrides it with an explicit scope id. `region` (only
+`eu` today) is reserved in the toml for future multi-region.
 
 | Flag | Description |
 |------|-------------|
 | `--broker <url>` | Broker URL (default: `FLECT_BROKER_URL` / config) |
 | `--token <token>` | Runtime token (default: `FLECT_TOKEN` / config) |
-| `--scope <scopeId>` | Target scope (default: the active scope) |
+| `--scope <scopeId>` | Target org-service scope id (default: the active context) |
 
 At deploy time only `FLECT_TOKEN` and `FLECT_BROKER_URL` are injected into your
 container; the SDK resolves everything else at runtime.
@@ -196,19 +218,41 @@ flect resolve DB
 
 ---
 
+## Pages
+
+Serve a built static site over Caddy on Nomad. Declare it in `flect.toml`:
+
+```toml
+[page]
+name = "docs"
+dir  = "./dist"        # your built static output
+# domain = "docs.acme.com"   # optional custom domain
+```
+
+```bash
+flect page deploy
+```
+
+---
+
 ## Config
 
 Config lives in `~/.flect/config.json`.
 
 ```bash
-flect config set <key> <value>    # key: broker | token | scope | auth
+flect config set <key> <value>    # key: gatewayUrl | broker | token
 flect config get [key]            # print config (token masked)
 flect config path                 # print the config file path
 ```
 
 ```bash
-flect config set broker https://api.example.com
+flect config set gatewayUrl https://flect.cloud   # one origin drives the whole plane
+flect config set broker https://api.example.com   # override just the broker (rarely needed)
 ```
+
+`gatewayUrl` is the recommended single knob: the identity-plane bases
+(`/v1/auth`, `/v1/iam`, `/v1/org`) and the broker URL all derive from it. Set
+`broker` only to point the control plane somewhere different from the gateway.
 
 ---
 
@@ -223,5 +267,5 @@ Commands that talk to the broker accept:
 | `--scope <scopeId>` | Override the active scope for this call |
 
 The active scope is sent to the broker as the `X-Flect-Scope` header; identity
-tokens are not scope-bound, so tenant-level reads (like `scope list`) work
+tokens are not scope-bound, so tenant-level reads (like `flect ls`) work
 without one.

@@ -19,32 +19,36 @@ This walks you from a fresh login to a deployed app with a database and a cache.
 npm install -g @getflect/cli
 ```
 
-## 2. Log in
+## 2. Log in and point at the platform
 
 ```bash
 flect login
+flect config set gatewayUrl https://flect.cloud   # the hosted control plane
+                                                  # (self-hosted: your gateway origin)
 ```
 
-This opens your browser for SSO. On success the CLI stores an identity token in
-`~/.flect/config.json`. Check where you're pointed anytime with:
+`flect login` opens your browser for SSO and stores an identity token in
+`~/.flect/config.json`. `gatewayUrl` is the single origin the CLI talks to — the
+identity plane and the broker both derive from it. Confirm everything is wired:
 
 ```bash
-flect whoami
+flect whoami        # your identity + where you're pointed
+flect doctor        # green-checks config, plane, broker, token, and scope
 ```
 
-## 3. Pick a scope
+## 3. Scopes — where things live
 
 Flect organizes everything as a tree: **Org → Workspace → Project →
-Environment**. Your login gives you an org; create the rest and select an active
-scope. Resources and deploys always target the active scope.
+Environment**. Your login gives you an org; you create the rest with the noun
+commands, then pick an active context with `flect use` — resource and deploy
+commands target it.
 
 ```bash
-flect scope create workspace web
-flect scope create project site --parent <workspace-id>
-flect scope create environment prod --parent <project-id>
-
-flect scope list                 # shows the tree; the active scope is marked
-flect use web/site/prod          # switch by slug path (or pass a scope id)
+flect org create --name Acme --slug acme
+flect ws  create --org acme --name Web --slug web
+flect proj create --org acme --ws web --name Site --slug site
+flect ls                         # inspect the tree (active node marked)
+flect use acme/web/site          # set the active context
 ```
 
 `flect ps` prints the active context (scope, token, broker) at a glance.
@@ -64,6 +68,7 @@ This writes a starter `flect.toml` and adds `flect.local.json` / `.flect/` to
 name    = "myapp"
 runtime = "node"
 port    = 3000
+scope   = "myapp/main/prod"      # reserved/ignored — deploy target comes from `flect use` (step 3)
 
 [[databases]]
 binding = "DB"
@@ -74,6 +79,7 @@ binding = "CACHE"
 name    = "myapp-cache"
 ```
 
+- `scope` is reserved today; the deploy target is your **active context** (`flect use`, step 3).
 - `binding` is the name your **code** uses: `env.db('DB')`.
 - `name` is the Flect **resource** it maps to.
 
@@ -103,6 +109,14 @@ Try it locally first — see [Local development](/guides/local-dev/).
 
 ## 6. Deploy
 
+:::note[Substrate providers must exist for your tenant]
+`flect deploy` provisions databases, KV, and stores through **providers** an
+operator registers once per tenant (which sqld/valkey/garage substrate backs
+each kind). If `flect doctor` warns `providers — none registered`, ask your
+platform operator to register them before deploying a resource-backed app; apps
+with no bindings deploy without providers.
+:::
+
 Build and push your image, set it in `flect.toml` (or pass `--image` on the app
 entry), then:
 
@@ -113,11 +127,13 @@ docker push ghcr.io/you/myapp:1.0.0
 flect deploy
 ```
 
-`flect deploy` reads `flect.toml`, **provisions** any missing resources,
-**binds** them to your project, and **deploys** your container to the cluster
-behind Traefik with an auto-issued TLS certificate.
+`flect deploy` reads `flect.toml`, targets your **active context** (from `flect
+use` in step 3), **provisions** any missing resources, **binds** them to your
+project, and **deploys** your container to the cluster behind Traefik with an
+auto-issued TLS certificate.
 
 ```
+scope: acme/web/site (active context)
 ✓ provisioned  database  myapp-db-a1b2c3d4
 ✓ provisioned  kv        myapp-cache-e5f6g7h8
 ✓ deployed     myapp     https://myapp-3f9k2a.up.flect.run   running
@@ -130,5 +146,5 @@ binding to a scoped, short-lived connection at runtime.
 ## Next steps
 
 - [Local development](/guides/local-dev/) — `flect dev` + `createEnv()` offline.
-- [Notes walkthrough](/guides/notes/) — a full app with DB + cache.
+- [Examples](/guides/examples/) — small single-purpose apps (a database, a KV store).
 - [CLI reference](/cli/) · [SDK reference](/sdk/) · [flect.toml](/platform/flect-toml/)
