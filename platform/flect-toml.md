@@ -167,14 +167,23 @@ environment as the variable named by `binding`.
 
 ## `[page]` — a static site
 
-Serve a built static directory over Caddy on Nomad (no runtime, no bindings).
+A page is a git repository the platform clones, builds and serves (no runtime,
+no bindings). The build runs in the cluster, so nothing depends on your machine.
 
 ```toml
 [page]
-name = "docs"
-dir  = "./dist"            # your built static output
-# domain = "docs.acme.com" # optional custom domain (else a generated hostname)
+name     = "docs"
+repo     = "https://github.com/acme/docs"   # required
+ref      = "main"                            # branch, tag or commit (default: main)
+template = "docs"                            # Starlight docs template
+title    = "Acme Docs"
+github   = "https://github.com/acme/docs"
+# domain = "docs.acme.com"                   # optional custom domain (else a generated hostname)
 ```
 
-Deploy it with `flect page deploy`. The directory is bind-mounted read-only into
-a `caddy:2-alpine` file-server and routed at its hostname behind Traefik.
+Deploy it with `flect page deploy`. If the repo has its own `astro.config.*` or
+a `[page.build]` command, that build runs instead of the template.
+
+Each build is published to its own immutable directory and swapped in atomically,
+so a failed build never touches the live site and `flect page rollback` is a
+pointer switch rather than a rebuild.

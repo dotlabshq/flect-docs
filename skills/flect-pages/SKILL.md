@@ -12,11 +12,9 @@ Part of the [flect](../flect/SKILL.md) skill set. Where [flect-app](../flect-app
 runs *containers*, Pages publishes a *static site* built from Markdown — no server,
 no bindings, just content at a TLS hostname.
 
-> **Maturity:** Pages is v1. The build/serve pipeline (`packages/pages`) is in
-> place; the first-class `flect pages` CLI + `[[pages]]` in `flect.toml` are
-> still landing. Today a page is deployed by running the **pages builder** with
-> the env below. Prefer this skill for docs sites; use it as the source of truth
-> for how Pages resolves content.
+> **Maturity:** Pages is v1. A page is a first-class broker resource: declare it
+> in `[page]` and deploy it with `flect page deploy`. Use this skill as the
+> source of truth for how Pages resolves content.
 
 ## What it is
 
@@ -30,21 +28,34 @@ into an Astro + Starlight docs template, builds a static site, and serves it at
   `CONTRIBUTING.md`, `SKILL.md` — repo meta never becomes a page.
 - Built-in full-text search (Pagefind) and the Starlight sidebar/nav.
 
-## Deploy (pages builder)
+## Deploy
 
-The builder image reads a small set of env vars and builds + serves the site:
+```toml
+# flect.toml
+[page]
+name     = "docs"
+repo     = "https://github.com/acme/docs"
+ref      = "main"          # branch, tag or commit (default: main)
+template = "docs"
+title    = "Acme Docs"
+github   = "https://github.com/acme/docs"
+# domain = "docs.acme.com" # CNAME → the generated host
+```
 
-| var | required | purpose |
-|---|---|---|
-| `PAGE_ID` | ✅ | stable id for the page (build/serve dir) |
-| `REPO_URL` | ✅ | Git URL of the Markdown repo to publish |
-| `PAGE_HOSTNAME` | ✅ | generated host, e.g. `docs-ab12cd.up.flect.run` |
-| `PAGE_TITLE` | — | site title (default `Docs`) |
-| `PAGE_GITHUB` | — | repo link shown in the header |
-| `PAGE_DOMAIN` | — | custom domain (CNAME → the generated host) |
+```bash
+flect page deploy      # build + publish, waits for the build
+flect page status      # status and build history
+flect page logs        # the last build's log
+flect page rollback    # serve a previous build, no rebuild
+```
 
-The build output is written to the serve dir and fronted by Traefik with an
-auto-issued certificate, exactly like a public app.
+The site is fronted by Traefik with an auto-issued certificate, exactly like a
+public app.
+
+**Build isolation.** The clone-and-build step runs with no cluster credentials
+and no access to any other page's content; a separate step publishes the result.
+Each build lands in its own immutable directory and is swapped in atomically, so
+a failed build never touches the live site and rollback is a pointer switch.
 
 ## Authoring tips
 

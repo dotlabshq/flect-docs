@@ -1,4 +1,7 @@
 [page]
+name     = "flect-docs"
+repo     = "https://github.com/dotlabshq/flect-docs"
+ref      = "main"
 template = "docs"
 title    = "Flect"
 github   = "https://github.com/dotlabshq/flect-docs"

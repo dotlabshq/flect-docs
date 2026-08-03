@@ -220,18 +220,29 @@ flect resolve DB
 
 ## Pages
 
-Serve a built static site over Caddy on Nomad. Declare it in `flect.toml`:
+A static site built from git by the platform. Declare it in `flect.toml`:
 
 ```toml
 [page]
-name = "docs"
-dir  = "./dist"        # your built static output
+name     = "docs"
+repo     = "https://github.com/acme/docs"
+ref      = "main"
+template = "docs"
 # domain = "docs.acme.com"   # optional custom domain
 ```
 
 ```bash
-flect page deploy
+flect page deploy                 # build the [page] repo and publish it
+flect page ls                     # pages in the active scope
+flect page status [page]          # status + build history (* = the build served)
+flect page logs [page]            # the last build's log (--build <id> for another)
+flect page rollback [page]        # serve a previous build — no rebuild
+flect page stop [page]            # stop serving (builds are kept)
 ```
+
+`deploy` waits for the build and exits non-zero if it fails. Builds are
+immutable and swapped in atomically, so a failed build leaves the live site
+untouched.
 
 ---
 
