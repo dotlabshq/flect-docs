@@ -146,7 +146,9 @@ The most common agent mistakes:
 ## Deploy requirements (apps)
 
 - Container listens on the `port` declared in `flect.toml`.
-- Responds to `GET /healthz` with `200` (Traefik health check).
+- Responds to `GET /healthz` with `200`, or declares its own path with
+  `health = "/your/path"` (`health = false` for a workload with no HTTP server).
+  No traffic is routed until the check passes.
 - Built for `linux/amd64`; dependencies bundled into the image.
 - Public apps get `https://<name>-<shortid>.up.flect.run`. Set `[app].domain`
   for a custom domain and point a CNAME at the generated hostname.

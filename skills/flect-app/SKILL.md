@@ -77,7 +77,7 @@ app     = "iam-service"
 ```
 
 `[[apps]]` fields: `name`, `image`, `port`, `public`, `expose`, `replicas`,
-`cpuMhz`, `memoryMb`. See the [flect.toml reference](/platform/flect-toml/).
+`cpuMhz`, `memoryMb`, `health`. See the [flect.toml reference](/platform/flect-toml/).
 
 ## Deploy
 
@@ -110,7 +110,9 @@ CMD ["node", "dist/index.js"]
 The container must:
 
 - Listen on the port declared in `flect.toml` (`port`).
-- Respond to `GET /healthz` with `200` (Traefik health check).
+- Respond to `GET /healthz` with `200` — or declare `health = "/your/path"` in
+  `flect.toml`. Until the check passes Traefik sends the app no traffic. A
+  workload that serves no HTTP at all sets `health = false`.
 - Be built for `linux/amd64` with dependencies bundled (no workspace symlinks).
 
 ## Using @getflect/sdk

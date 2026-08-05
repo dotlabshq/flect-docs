@@ -149,6 +149,45 @@ app     = "auth-service"
 | `replicas` | Instance count. |
 | `cpuMhz` | CPU allocation, MHz. |
 | `memoryMb` | Memory allocation, MB. |
+| `health` | Health check — a path, a table, or `false`. See below. |
+
+### `health` — what the platform probes
+
+By default Flect probes `GET /healthz` on your container every 15 seconds with a
+3 second timeout. This is not cosmetic: **while the check fails, Traefik keeps
+the app out of its backend and sibling `[[services]]` URLs render empty**, so an
+app that answers health somewhere else looks exactly like an app that is down.
+
+Three forms, all optional:
+
+```toml
+[[apps]]
+name   = "api"
+health = "/api/health"        # just a different path
+
+[[apps]]
+name = "slow-starter"
+  [apps.health]               # path + timings
+  path     = "/status"
+  interval = "30s"            # "30s", "2m", or a bare number of seconds
+  timeout  = 5
+
+[[apps]]
+name   = "worker"
+health = false                # no check at all — this app serves no HTTP
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `path` | `/healthz` | Path to probe. Must start with `/`. |
+| `interval` | `15s` | Time between probes. |
+| `timeout` | `3s` | How long a probe may take before it counts as failed. |
+
+Use `health = false` for workloads that expose no HTTP server — a queue consumer
+or a cron-style worker. Without it their check stays failing forever, and they
+never become discoverable.
+
+Omitting `health` entirely keeps the default, so existing projects need no change.
 
 ### `[vars]`
 
