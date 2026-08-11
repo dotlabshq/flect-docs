@@ -53,6 +53,20 @@ flect use acme/web/site          # set the active context
 
 `flect ps` prints the active context (scope, token, broker) at a glance.
 
+### Invite your team
+
+Bring others into the org by email — they don't need an account first. The
+invite is pending until they log in and accept; roles rank
+**owner > admin > member > viewer**.
+
+```bash
+flect org invite dev@acme.com --role member --org acme   # you (owner/admin) send it
+# …the invited person, after `flect login`:
+flect invites                     # list invitations addressed to you
+flect invites accept <id>         # join the org at the invited role
+flect org members --org acme      # everyone can now see the roster
+```
+
 ## 4. Scaffold `flect.toml`
 
 In your project directory:

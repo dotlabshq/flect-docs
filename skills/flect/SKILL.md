@@ -160,6 +160,10 @@ flect login | logout | whoami | ps | ls
 flect org | ws | proj | env            # tenancy (each: bare=list, + create/get/update/delete)
 flect use <org[/ws/proj/env]>          # set active context (interactive if no arg)
 flect access role <scopeId>            # your effective role (PDP)
+flect org members [add <uid> --role <r> | rm <uid>]   # membership (owner>admin>member>viewer)
+flect org invite <email> --role <r>    # invite by email (owner/admin); accepted on next login
+flect org invites [revoke <id>]        # pending invites for the org
+flect invites [accept <id>]            # invitations addressed to you → join the org
 flect init [--name <n>]            # scaffold flect.toml
 flect dev                          # flect.local.json for local createEnv()
 flect bindings                     # list declared bindings/apps/services

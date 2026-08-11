@@ -107,6 +107,44 @@ flect access role <scopeId>          # your effective role at a scope
 flect access check <app> <action> <scopeId>
 ```
 
+### `flect org members`
+
+Manage who belongs to an org and at what role. Roles rank
+**owner > admin > member > viewer**; the PDP inherits an org role down the whole
+scope subtree. Adding an existing member re-assigns their role (upsert), so this
+is also how you promote or demote. Owner/admin only.
+
+```bash
+flect org members                                   # (bare) list members of the active org
+flect org members --org acme                        # list a specific org
+flect org members add <userId> --role admin --org acme   # add or re-role by user id
+flect org members rm  <userId> --org acme           # remove a member
+```
+
+### `flect org invite` · `flect org invites`
+
+Invite someone by **email** — they don't need an account yet. The invite stays
+pending until that person logs in and accepts; matching is by the verified
+`email` claim in their token, case-insensitive. One pending invite per
+(org, email) — re-inviting returns the existing one. Owner/admin only.
+
+```bash
+flect org invite <email> --role member --org acme   # send a pending invitation
+flect org invites --org acme                        # (bare) list pending invites for the org
+flect org invites revoke <id> --org acme            # revoke a pending invite (alias: rm)
+```
+
+### `flect invites` — invitations addressed to you
+
+The invitee side. After `flect login`, list and accept invitations sent to your
+email; accepting joins you to the org at the invited role (no re-login needed —
+org-service reads your role from membership on each request).
+
+```bash
+flect invites                # (bare) list invitations addressed to you
+flect invites accept <id>    # accept and join the org
+```
+
 ---
 
 ## Project files
