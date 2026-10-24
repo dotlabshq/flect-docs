@@ -16,7 +16,7 @@ This walks you from a fresh login to a deployed app with a database and a cache.
 ## 1. Install the CLI
 
 ```bash
-npm install -g @getflect/cli
+npm install -g @dotlabshq/flect-cli
 ```
 
 ## 2. Log in and point at the platform

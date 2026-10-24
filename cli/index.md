@@ -6,7 +6,7 @@ description: Every flect command — login, tenancy, resources, deploy, pages, a
 Install the CLI:
 
 ```bash
-npm install -g @getflect/cli
+npm install -g @dotlabshq/flect-cli
 ```
 
 The CLI is a client of the Flect control plane (the *broker*). It reads its

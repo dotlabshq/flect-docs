@@ -22,7 +22,7 @@ short-lived connection at runtime.
 ## Quick start
 
 ```bash
-npm install -g @getflect/cli
+npm install -g @dotlabshq/flect-cli
 
 flect login                    # SSO, stored in ~/.flect/config.json
 flect use acme/web/prod        # org / workspace / project / environment

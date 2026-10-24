@@ -66,7 +66,7 @@ Org → Workspace → Project → Environment      (the scope tree)
 
 ```bash
 # 1. Install + authenticate + point at the platform
-npm install -g @getflect/cli
+npm install -g @dotlabshq/flect-cli
 flect login                         # SSO, stored in ~/.flect/config.json
 flect config set gatewayUrl https://flect.cloud   # one origin drives identity + broker
                                                   # (self-hosted: your gateway origin)
