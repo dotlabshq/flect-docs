@@ -60,8 +60,10 @@ flect whoami
 
 Everything lives in a tree: **Org → Workspace → Project → Environment**. Tenancy
 is managed by the identity plane (org-service); the CLI has one noun command per
-level. Your login gives you an org; you create the rest. Resource and deploy
-commands act on the **active context** you set with `flect use`.
+level. Your login gives you an org; you create the rest. A `flect.toml` names
+its own scope inside the active org, and commands run next to one act on that
+scope. Without a file, they act on the **active context** you set with
+`flect use`.
 
 ### `flect org` · `flect ws` · `flect proj` · `flect env`
 
@@ -77,8 +79,10 @@ flect env  create --org acme --ws web --proj site --name prod   # `use` auto-cre
 
 ### `flect use <path>`
 
-Set the active org / workspace / project / environment. Resource and deploy
-commands target it (sent to the broker as `X-Org-Id` + `X-Flect-Scope`).
+Set the active org / workspace / project / environment. A services-format
+`flect.toml` only needs the org; it names its own scope. Commands with no such
+file (and old-format files) target the whole path, sent to the broker as
+`X-Org-Id` + `X-Flect-Scope`.
 
 ```bash
 flect use acme               # just the org
@@ -149,6 +153,9 @@ flect invites accept <id>    # accept and join the org
 
 ## Project files
 
+Every command that reads `flect.toml` takes `-c, --config <file>` for another
+one. One file is one scope, so `-c flect.dev.toml` is how you act on dev.
+
 ### `flect init`
 
 Scaffold a `flect.toml` in the current directory (and git-ignore the local dev
@@ -161,10 +168,12 @@ flect init --name myapp        # default: the directory name
 
 ### `flect bindings`
 
-List the bindings, apps, and services declared in `flect.toml`.
+What the file declares: its scope, resources, and per service what it uses,
+calls and which secrets it gets.
 
 ```bash
 flect bindings
+flect bindings -c flect.dev.toml
 ```
 
 ### `flect dev`
@@ -180,29 +189,58 @@ flect dev
 
 ## Resources
 
-Each resource kind has the same four subcommands. `<ref>` is either the resource
-id or its public reference (e.g. `myapp-db-a1b2c3d4`).
+Each resource kind has the same four subcommands. They act on the scope of the
+`flect.toml` in the current directory (or `-c <file>`), and on the active
+context when there is none. `<id>` is the resource's `res_…` id (its name and
+full `resource-…` id work too).
 
 ```bash
-flect db    create <name> | list | status <ref> | delete <ref>   # sqld / libsql
-flect kv    create <name> | list | status <ref> | delete <ref>   # Valkey / redis
-flect store create <name> | list | status <ref> | delete <ref>   # Garage / S3
+flect db    create <name> | list | status <id> | delete <id> [--force]   # sqld / libsql
+flect kv    create <name> | list | status <id> | delete <id> [--force]   # Valkey / redis
+flect store create <name> | list | status <id> | delete <id> [--force]   # Garage / S3
 ```
 
-- **`create`** provisions a resource in the active scope and prints the public
-  ref to put in `flect.toml` (`name = "…"`).
-- **`list`** shows the resources of that kind in the scope.
-- **`status <ref>`** prints the full resource record as JSON.
-- **`delete <ref>`** deprovisions the resource.
+- **`create`** provisions a resource in that scope and prints the line to put
+  in `flect.toml`.
+- **`list`** shows the scope's resources: id, name, status, and the services
+  whose `uses` name them.
+- **`status <id>`** prints the full resource record as JSON.
+- **`delete <id>`** deprovisions it. Refused while a binding points at it;
+  `--force` removes the bindings first. Its data is gone.
 
 ```bash
-$ flect db create notes-db
-✓ created database "notes-db-a1b2c3d4" (provisioning)
-  flect.toml → name = "notes-db-a1b2c3d4"
+$ flect db create shop-db
+✓ created database "shop-db" in acme/web/shop/production (provisioned)
+  flect.toml → id = "res_k7f3a2"
+
+$ flect db list
+scope: acme/web/shop/production
+  res_k7f3a2   shop-db                  provisioned    used by: shop-api
 ```
 
-Resource commands act on the **active context** (`flect use`) and accept the
-connection flags below (`--broker`, `--token`, `--scope`).
+A resource belongs to the scope it was created in: dev and production each
+have their own.
+
+---
+
+## Secrets
+
+The file lists secret names per service (`secrets = ["STRIPE_KEY"]`); the
+values live in the platform, per service and per scope. A value is read from
+stdin, never from an argument, so it stays out of shell history. No command
+prints a value.
+
+```bash
+printf %s "$STRIPE_KEY" | flect secret set api STRIPE_KEY      # piped
+flect secret set api STRIPE_KEY                                 # typed, hidden
+flect secret list            # every service of the file: names set, and listed ones not set
+flect secret list api
+flect secret unset api STRIPE_KEY
+flect secret set api STRIPE_KEY -c flect.dev.toml               # dev's own value
+```
+
+`<service>` is the key in `[services.<service>]`. A new value reaches the
+service on its next `flect deploy`.
 
 ---
 
@@ -210,32 +248,44 @@ connection flags below (`--broker`, `--token`, `--scope`).
 
 ### `flect deploy`
 
-Realize `flect.toml` against the broker: provision any missing resources, bind
-them to the project, and deploy the app(s) to the cluster behind Traefik. It
-targets your **active context** (set with `flect use`).
-
 ```bash
-flect use acme/web/site/prod            # pick the target context first
-flect deploy
-flect deploy --scope <scopeId>          # or target an explicit org-service scope id
+flect deploy                       # ./flect.toml → the scope it names
+flect deploy -c flect.dev.toml     # another file, another scope
+flect deploy --yes                 # also drop vars the last deploy kept that the file no longer has
 ```
 
-The deploy target is the active org-service scope (env → project → …) from
-`flect use`; `--scope` overrides it with an explicit scope id. `region` (only
-`eu` today) is reserved in the toml for future multi-region.
+For a services-format file, `flect deploy`:
+
+1. resolves `[app].scope` in the active org (`--scope` is refused: the file
+   decides);
+2. **checks the whole file against that scope** and stops, with nothing
+   changed, on any problem: an id that is not a resource there, a binding name
+   that points elsewhere, a listed secret not set, kept vars that would be
+   dropped (unless `--yes`);
+3. binds the resources by id, declares every service, and deploys each one
+   with only its own `uses`, `calls`, vars and secrets.
+
+Warnings (it still deploys): a resource no service uses, a secret-looking name
+in `vars`, a service of the application still running but no longer in the
+file. Every check is listed in the [flect.toml reference](/platform/flect-toml/).
+
+An old-format file (`[[apps]]`) deploys as before, to the active context or
+`--scope <scopeId>`, creating resources by name, with a warning.
 
 | Flag | Description |
 |------|-------------|
-| `--broker <url>` | Broker URL (default: `FLECT_BROKER_URL` / config) |
-| `--token <token>` | Runtime token (default: `FLECT_TOKEN` / config) |
-| `--scope <scopeId>` | Target org-service scope id (default: the active context) |
+| `-c, --config <file>` | The file to deploy (default `flect.toml`) |
+| `--yes` | Drop kept vars the file no longer has |
+| `--scope <scopeId>` | Old format only: target an explicit scope id |
+| `--broker <url>` / `--token <token>` | Connection overrides |
 
-At deploy time only `FLECT_TOKEN` and `FLECT_BROKER_URL` are injected into your
-container; the SDK resolves everything else at runtime.
+The container gets only `FLECT_TOKEN`, `FLECT_BROKER_URL`, its vars and
+secrets, and the addresses of the services it calls; the SDK resolves
+everything else at runtime.
 
 ### `flect apps`
 
-List the apps deployed in the active scope (name, status, URL).
+List the apps of the active scope: name, status, URL, image.
 
 ```bash
 flect apps
@@ -313,7 +363,7 @@ Commands that talk to the broker accept:
 |------|-------------|
 | `--broker <url>` | Broker base URL |
 | `--token <token>` | Runtime / identity token |
-| `--scope <scopeId>` | Override the active scope for this call |
+| `--scope <scopeId>` | Override the active scope for this call (refused next to a services-format file, which names its own) |
 
 The active scope is sent to the broker as the `X-Flect-Scope` header; identity
 tokens are not scope-bound, so tenant-level reads (like `flect ls`) work

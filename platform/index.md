@@ -37,9 +37,10 @@ Org
 ```
 
 An **org** is your tenant (you get one on login). You create the workspace /
-project / environment scopes and select an **active scope** with `flect use`.
-Resources and deploys target the active scope, so the same code and `flect.toml`
-deploy to `dev`, `staging`, and `prod` with fully isolated resources.
+project / environment scopes. A `flect.toml` is one application in one scope
+and names it; another environment is another file (`flect.dev.toml`) with its
+own resources. A resource belongs to the scope it was created in and is
+unreachable from any other.
 
 ## How resolution works
 
@@ -48,7 +49,8 @@ This is the core idea: **your app never holds a connection string or a secret.**
 1. On deploy, Flect injects exactly two env vars into your container:
    `FLECT_TOKEN` (a scoped runtime token) and `FLECT_BROKER_URL`.
 2. `createEnv().db('DB')` asks the broker to resolve the binding `DB`, presenting
-   the token (and the active scope).
+   the token. The token names the service; the broker answers only if that
+   service's `uses` lists `DB` (otherwise `403 BINDING_NOT_USED`).
 3. The broker returns a **manifest** — a temporary, scoped connection with an
    `expiresAt` lease (a URL + a sqld namespace, a redis URL + key prefix, or an
    S3 endpoint + bucket + keys).
@@ -62,18 +64,19 @@ across scopes. Rotating access is a matter of the broker issuing a new manifest.
 
 Each resource is isolated at the storage layer, not just by convention:
 
-- **Database** — every request carries the resource's sqld namespace as an
-  `x-namespace` header (RFC-0017 "direct mode"). sqld enforces namespace
-  separation; a binding only ever sees its own data.
-- **KV** — every key is prefixed with the resource's namespace, so two KV stores
-  never collide even with identical key names.
+- **Database** — every request carries the resource's sqld namespace
+  (`x-namespace`) and a token signed for that namespace only. sqld refuses a
+  request without it (401) and a request for any other namespace (404).
+- **KV** — every resource has its own Valkey user, allowed only its own key
+  prefix and channels. Commands that reach other keys (`SCAN`, `KEYS`,
+  `FLUSHALL`, …) are refused.
 - **Object storage** — each store is its own Garage bucket with its own API key
   pair. There is no cross-bucket access.
 
 ## Deploy and routing
 
-`flect deploy` reads `flect.toml`, provisions missing resources, binds them, and
-submits a Nomad `service` job. Traefik picks the service up from Consul and
+`flect deploy` reads `flect.toml`, checks it against its scope, binds its
+resources by id, and submits one Nomad `service` job per service. Traefik picks the service up from Consul and
 issues a TLS certificate. An app declares one of three routing modes:
 
 | Mode | `flect.toml` | Traefik rule |

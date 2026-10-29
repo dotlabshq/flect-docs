@@ -20,28 +20,36 @@ scoped to that namespace — no URL or token in your code.
 ## Create
 
 ```bash
-flect db create my-db          # prints the public ref for flect.toml
-flect db list
-flect db status <ref>
-flect db delete <ref>
+flect db create my-db          # in the scope of ./flect.toml (-c <file> for another)
+# ✓ created database "my-db" in acme/web/shop/production (provisioned)
+#   flect.toml → id = "res_k7f3a2"
+flect db list                  # id, name, status, and the services that use it
+flect db status <id>
+flect db delete <id>           # refused while bound; --force unbinds first
 ```
 
-`flect deploy` also creates any database named in `flect.toml` that doesn't
-exist yet.
+A database belongs to the scope it was created in. Dev and production each get
+their own, with their own ids. `flect deploy` never creates one.
 
 ## Bind
 
 ```toml
 [[databases]]
-binding        = "DB"
-name           = "my-db"
-migrations_dir = "migrations"   # optional: where your .sql files live
+binding        = "DB"            # the name code passes to env.db()
+id             = "res_k7f3a2"    # from flect db create
+migrations_dir = "migrations"    # optional: where your .sql files live
+
+[services.api]
+uses = ["DB"]                    # only services that list it may resolve it
 ```
+
+Then list the binding in the `uses` of every service whose code calls it.
+A service that does not list it cannot resolve it (`403 BINDING_NOT_USED`).
 
 ## Use in code
 
 ```typescript
-import { createEnv } from '@getflect/sdk'
+import { createEnv } from '@dotlabshq/flect-sdk'
 
 const env = createEnv()
 const db  = await env.db('DB')   // binding name from flect.toml

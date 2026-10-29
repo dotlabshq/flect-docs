@@ -20,10 +20,10 @@ prefixed, so stores never collide.
 ## Create
 
 ```bash
-flect kv create my-cache
-flect kv list
-flect kv status <ref>
-flect kv delete <ref>
+flect kv create my-cache   # in the scope of ./flect.toml; prints id = "res_…"
+flect kv list            # id, name, status, and the services that use it
+flect kv status <id>
+flect kv delete <id>     # refused while bound; --force unbinds first
 ```
 
 ## Bind
@@ -31,13 +31,19 @@ flect kv delete <ref>
 ```toml
 [[kv]]
 binding = "CACHE"
-name    = "my-cache"
+id      = "res_m2b8td"
+
+[services.api]
+uses = ["CACHE"]
 ```
+
+Then list the binding in the `uses` of every service whose code calls it.
+A service that does not list it cannot resolve it (`403 BINDING_NOT_USED`).
 
 ## Use in code
 
 ```typescript
-import { createEnv } from '@getflect/sdk'
+import { createEnv } from '@dotlabshq/flect-sdk'
 
 const env   = createEnv()
 const cache = await env.kv('CACHE')   // official ioredis client

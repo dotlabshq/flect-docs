@@ -21,10 +21,10 @@ own API key pair. `env.store(binding)` returns an official
 ## Create
 
 ```bash
-flect store create my-uploads
-flect store list
-flect store status <ref>
-flect store delete <ref>
+flect store create my-uploads   # in the scope of ./flect.toml; prints id = "res_…"
+flect store list            # id, name, status, and the services that use it
+flect store status <id>
+flect store delete <id>     # refused while bound; --force unbinds first
 ```
 
 ## Bind
@@ -32,13 +32,19 @@ flect store delete <ref>
 ```toml
 [[stores]]
 binding = "FILES"
-name    = "my-uploads"
+id      = "res_q4wz7n"
+
+[services.api]
+uses = ["FILES"]
 ```
+
+Then list the binding in the `uses` of every service whose code calls it.
+A service that does not list it cannot resolve it (`403 BINDING_NOT_USED`).
 
 ## Use in code
 
 ```typescript
-import { createEnv } from '@getflect/sdk'
+import { createEnv } from '@dotlabshq/flect-sdk'
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 
 const env = createEnv()

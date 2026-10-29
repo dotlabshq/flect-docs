@@ -18,14 +18,15 @@ hero:
 
 Flect is a developer platform for deploying apps and their backing resources —
 **databases, KV stores, and object storage** — on your own infrastructure. You
-declare what your project needs in `flect.toml`, and Flect provisions it, binds
-it, and deploys your containers behind TLS.
+describe an application in `flect.toml`: its services, the resources they use,
+and what each service may reach. Flect deploys each service behind TLS with
+exactly that and nothing more.
 
 Your application code stays clean: it calls `createEnv()` and asks for a binding
 by name. It never sees a connection string, a port, or a credential.
 
 ```typescript
-import { createEnv } from '@getflect/sdk'
+import { createEnv } from '@dotlabshq/flect-sdk'
 
 const env = createEnv()
 const db  = await env.db('DB')        // an official @libsql/client
@@ -35,10 +36,11 @@ const rows = await db.execute('SELECT * FROM notes')
 ## The whole model in one screen
 
 ```bash
-flect login                    # SSO — stored in ~/.flect/config.json
-flect use acme/web/prod        # pick an org / workspace / project / environment
-flect init                     # scaffold flect.toml
-flect deploy                   # provision resources, bind them, deploy your app
+flect login                    # SSO, stored in ~/.flect/config.json
+flect use acme                 # your org; flect.toml names its own scope
+flect init                     # scaffold flect.toml: one app, one scope
+flect db create myapp-db       # prints the id to write in flect.toml
+flect deploy                   # check the file, bind by id, deploy each service
 ```
 
 At deploy time Flect injects exactly two environment variables into your
@@ -53,10 +55,15 @@ broker, scoped to your project, and never written into your image.
 - **Databases** — SQLite-compatible via sqld/libsql, isolated per resource.
 - **KV** — Redis-compatible via Valkey, key-prefixed per resource.
 - **Object storage** — S3-compatible via Garage, one bucket + key pair per resource.
-- **SDK** — `@getflect/sdk` hands you the *official* client for each resource
+- **SDK** — `@dotlabshq/flect-sdk` hands you the *official* client for each resource
   (`@libsql/client`, `ioredis`, `@aws-sdk/client-s3`), pre-wired and scoped.
-- **Scopes** — an Org → Workspace → Project → Environment tree, so the same
-  code deploys to `dev`, `staging`, and `prod` with isolated resources.
+- **Least privilege by default** — each service lists the bindings it uses,
+  the services it calls and the secrets it gets; the broker refuses the rest.
+- **Scopes** — an Org → Workspace → Project → Environment tree. One file per
+  environment (`flect.toml`, `flect.dev.toml`), each with its own resources;
+  a dev service can never reach a production database.
+- **Secrets** — names in the file, values set from stdin with
+  `flect secret set`, per service and per environment.
 
 ## Next steps
 

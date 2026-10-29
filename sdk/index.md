@@ -3,20 +3,20 @@ title: SDK Reference
 description: createEnv() and the resource clients — the entire application-facing API.
 ---
 
-`@getflect/sdk` is the TypeScript client for accessing Flect-managed resources.
+`@dotlabshq/flect-sdk` is the TypeScript client for accessing Flect-managed resources.
 Its whole surface is one function and three accessors. It hands you the
 **official client** for each resource — a real `@libsql/client`, `ioredis`, or
 `@aws-sdk/client-s3` instance — already pointed at the right endpoint and scoped
 to your project. There is no Flect-specific query wrapper to learn.
 
 ```bash
-npm install @getflect/sdk
+npm install @dotlabshq/flect-sdk@^0.2.0
 ```
 
 ## `createEnv(options?)`
 
 ```typescript
-import { createEnv } from '@getflect/sdk'
+import { createEnv } from '@dotlabshq/flect-sdk'
 
 const env = createEnv()
 ```

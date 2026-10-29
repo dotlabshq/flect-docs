@@ -20,14 +20,22 @@ const db  = await env.db('DB')     // an official @libsql/client
 await db.execute('SELECT ...')
 ```
 
-`flect.toml` needs one binding:
+`flect.toml`: one database, one service that uses it.
 
 ```toml
-scope = "examples/notes/prod"
+[app]
+name  = "notes"
+scope = "examples/notes/production"
 
 [[databases]]
 binding = "DB"
-name    = "notes-db"
+id      = "res_……"                 # flect db create notes-db
+
+[services.web]
+image  = "ghcr.io/getflect/flect-example-notes:0.2.0"
+port   = 3000
+public = true
+uses   = ["DB"]
 ```
 
 - **Live:** https://flect-example-notes-6b6e4f.up.flect.run
@@ -45,11 +53,19 @@ await kv.incr('counter')
 ```
 
 ```toml
-scope = "examples/counter/prod"
+[app]
+name  = "counter"
+scope = "examples/counter/production"
 
 [[kv]]
 binding = "KV"
-name    = "counter-kv"
+id      = "res_……"                 # flect kv create counter-kv
+
+[services.web]
+image  = "ghcr.io/getflect/flect-example-counter:0.2.0"
+port   = 3000
+public = true
+uses   = ["KV"]
 ```
 
 - **Live:** https://flect-example-counter-5cdcd0.up.flect.run
@@ -58,13 +74,14 @@ name    = "counter-kv"
 ## The shape of every example
 
 ```bash
-flect init                 # scaffold flect.toml
-flect proj create --org <org> --ws <ws> --name app --slug app   # create the scope
-flect use <org>/<ws>/app   # set the deploy target (the active context)
+flect use <org>                                   # the file names its own scope
+flect proj create --org <org> --ws <ws> --name app --slug app      # if the scope is missing
+flect init                                        # scaffold flect.toml
+flect db create app-db                            # paste the printed id = "res_…"
 docker build --platform linux/amd64 -t ghcr.io/you/app:0.1.0 . && docker push ghcr.io/you/app:0.1.0
-flect deploy               # provisions the resource, binds, deploys to the active context
+flect deploy                                      # checks, binds by id, deploys
 ```
 
 Deploy injects only `FLECT_TOKEN` + `FLECT_BROKER_URL`; the SDK resolves each
-binding at runtime. For the low-level SDK snippets (db / kv / store / together),
+binding the service lists in `uses`. For the low-level SDK snippets (db / kv / store / together),
 see the `examples/` folder in the platform repo.

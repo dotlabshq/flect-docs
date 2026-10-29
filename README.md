@@ -2,8 +2,9 @@
 
 Flect is a developer platform for deploying apps and their backing resources —
 **databases, KV stores, and object storage** — on your own infrastructure
-(Nomad + Traefik). You declare what your project needs in `flect.toml`; Flect
-provisions it, binds it, and deploys your containers behind TLS.
+(Nomad + Traefik). You describe an application in `flect.toml` (its services,
+the resources they use by id, and what each service may reach) and Flect
+deploys each service behind TLS with exactly that.
 
 Your code stays clean: it calls `createEnv()` and asks for a binding by name. It
 never sees a URL, a port, or a secret. At deploy time Flect injects only
@@ -25,15 +26,16 @@ short-lived connection at runtime.
 npm install -g @dotlabshq/flect-cli
 
 flect login                    # SSO, stored in ~/.flect/config.json
-flect use acme/web/prod        # org / workspace / project / environment
-flect init                     # scaffold flect.toml
-flect deploy                   # provision resources, bind, deploy
+flect use acme                 # your org; flect.toml names its own scope
+flect init                     # scaffold flect.toml: one app, one scope
+flect db create myapp-db       # prints the id to write in flect.toml
+flect deploy                   # check the file, bind by id, deploy each service
 ```
 
 ## SDK
 
 ```typescript
-import { createEnv } from '@getflect/sdk'
+import { createEnv } from '@dotlabshq/flect-sdk'
 
 const env = createEnv()
 

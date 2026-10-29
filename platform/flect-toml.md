@@ -1,228 +1,226 @@
 ---
 title: flect.toml reference
-description: Declare your project's bindings, apps, and services.
+description: One application in one scope — its services, the resources they use, and what each service gets.
 sidebar:
   order: 1
 ---
 
-`flect.toml` lives at the root of your project. It declares **where the project
-lives** (its scope), the **bindings** your code resolves (`env.db('DB')`), the
-**apps** to deploy, and how they're wired. `flect deploy` reads it to provision,
-bind, and deploy. The SDK never reads this file — it's a CLI/deploy artifact.
+`flect.toml` lives at the root of your project. **One file is one application
+in one scope.** It names the scope it deploys to, the resources the application
+uses (by id), and its services: what each one runs and what it gets. `flect
+deploy` reads it. The SDK never does.
 
-Scaffold one with `flect init`.
-
-## Single-app form
-
-The common case: one app, a top-level `name`, a `scope`, and its bindings.
-
-```toml
-name    = "myapp"
-runtime = "node"
-port    = 3000
-# target set with `flect use` (see Scope below); no scope field needed here
-
-[[databases]]
-binding        = "DB"
-name           = "myapp-db"
-migrations_dir = "migrations"
-
-[[kv]]
-binding = "CACHE"
-name    = "myapp-cache"
-
-[[stores]]
-binding = "FILES"
-name    = "myapp-uploads"
-```
-
-| Field | Description |
-|-------|-------------|
-| `name` | Project / app name (required unless using `[app]`). |
-| `scope` | Reserved — deploy target comes from `flect use` (see Scope below). |
-| `region` | Deployment region — only `eu` exists today (the default); reserved for more. |
-| `runtime` | Informational (e.g. `node`). |
-| `port` | Port your container listens on. |
-
-## Scope — where the project lives
-
-Every resource and app lands in a **scope** (`org → workspace → project →
-environment`). Tenancy is managed by the identity plane (org-service); create
-the tree with `flect org/ws/proj/env` and pick the target with `flect use`:
-
-```bash
-flect org create --name Acme --slug acme
-flect ws  create --org acme --name Web --slug web
-flect proj create --org acme --ws web --name Notes --slug notes
-flect use acme/web/notes/prod        # this is the deploy target
-```
-
-`flect deploy` targets your **active context** (from `flect use`), sent to the
-broker as `X-Org-Id` + `X-Flect-Scope`. Override it for one deploy with
-`--scope <scopeId>`. Precedence: `--scope` flag > active context.
-
-> The top-level `scope = "…"` field in `flect.toml` is reserved for a future
-> org-service path resolution; today the deploy target comes from `flect use`
-> (or `--scope`), not the toml field.
-
-## Bindings
-
-Bindings connect a **name your code uses** to a **Flect resource**. The three
-kinds map to three code accessors:
-
-| Section | Kind | Accessor |
-|---------|------|----------|
-| `[[databases]]` | database (sqld/libsql) | `env.db(binding)` |
-| `[[kv]]` | KV (Valkey/redis) | `env.kv(binding)` |
-| `[[stores]]` | object storage (Garage/S3) | `env.store(binding)` |
-
-Each entry takes:
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `binding` | yes | The name your code passes to `env.db()/kv()/store()`, e.g. `"DB"`. |
-| `name` | yes | The Flect resource it maps to (the public ref from `flect <kind> create`). |
-| `migrations_dir` | no | Databases only — directory holding your SQL migration files. |
-
-Binding names must be unique across all kinds in a project.
-
-```toml
-[[databases]]
-binding = "USERS_DB"
-name    = "users-db"
-
-[[databases]]
-binding = "LOGS_DB"
-name    = "logs-db"
-
-[[kv]]
-binding = "SESSION"
-name    = "session-cache"
-```
-
-> Resource `name`s come from `flect db create` / `flect kv create` /
-> `flect store create`, which print the exact ref to paste here. If a named
-> resource doesn't exist yet, `flect deploy` provisions it.
-
-## App-group form
-
-To deploy several apps that share a domain (e.g. an API plus a sidecar service),
-use `[app]` + `[[apps]]` instead of a top-level `name`.
+Another environment is another file: `flect.toml` for production,
+`flect.dev.toml` for dev, each with its own scope and resource ids. Deploy the
+other one with `flect deploy -c flect.dev.toml`. Nothing is shared or
+inherited between them, so dev can run fewer services than production, or
+different images.
 
 ```toml
 [app]
-name   = "clave"
-domain = "clave-api.up.flect.run"   # optional: shared / custom domain
+name  = "shop"
+scope = "web/shop/production"         # workspace/project/environment, in your org
 
-[[apps]]
-name   = "clave-api"
-image  = "ghcr.io/you/clave-api:1.0.0"
-port   = 3000
-public = true                       # owns the domain (at most one app)
-
-[[apps]]
-name   = "auth-service"
-image  = "ghcr.io/you/auth:1.0.0"
-expose = "/v1/auth"                 # mounted at a path under the shared domain
-
-[vars]
-OIDC_ISSUER = "https://nesskey.com"
-
+# ── Resources: created apart, used by id ──────────────────────
 [[databases]]
-binding = "DB"
-name    = "clave-db"
+binding = "DB"                         # code: env.db("DB")
+id      = "res_k7f3a2"                 # from `flect db create`
 
-[[services]]
-binding = "AUTH_SERVICE"            # inject the sibling app's URL as this env var
-app     = "auth-service"
+[[kv]]
+binding = "CACHE"
+id      = "res_m2b8td"
+
+# ── For every service ─────────────────────────────────────────
+[vars]
+LOG_LEVEL = "info"
+
+# ── Services ──────────────────────────────────────────────────
+[services.api]
+image   = "ghcr.io/acme/shop-api:1.4.0"
+port    = 3000
+uses    = ["DB", "CACHE"]              # the only bindings it may resolve
+secrets = ["STRIPE_KEY"]               # values: flect secret set api STRIPE_KEY
+
+[services.api.vars]
+CURRENCY = "EUR"
+
+[services.web]
+image  = "ghcr.io/acme/shop-web:1.4.0"
+port   = 3000
+public = true                          # owns the domain
+calls  = ["api"]                       # gets API_SERVICE_URL; nothing else
 ```
 
-### `[[apps]]` fields
+## The rule: a service gets only what it lists
+
+| Key | What the service gets | Enforced by |
+|---|---|---|
+| `uses` | The bindings it may resolve. Any other gets `403 BINDING_NOT_USED`. | the broker |
+| `calls` | The address of each listed service, as `<SERVICE>_SERVICE_URL`. | the deploy |
+| `[vars]` + `[services.X.vars]` | Plain configuration. The service's own value wins. | the deploy |
+| `secrets` | The listed secrets, read from the secret store. | the broker |
+
+A service that lists nothing gets nothing: no bindings, no addresses, no
+secrets. `web` above cannot open the database even though it is in the same
+application.
+
+## `[app]`
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | yes | The application's name. Services deploy as `<name>-<service>`. |
+| `scope` | yes | `workspace/project/environment` (1–3 segments) inside the org you selected with `flect use <org>`. The file decides where it deploys; `--scope` is refused. |
+| `domain` | no | A custom domain for the public service. Point a CNAME at its generated host. |
+| `region` | no | Only `eu` exists today. |
+
+## Resources: `[[databases]]`, `[[kv]]`, `[[stores]]`
+
+A resource exists apart from any application. It belongs to the scope it was
+created in and is used by writing its id. Deploying or deleting an application
+never creates or removes one.
+
+| Field | Required | Description |
+|---|---|---|
+| `binding` | yes | The name code asks for: `env.db("DB")`, `env.kv("CACHE")`, `env.store("FILES")`. |
+| `id` | yes | `res_…` from `flect db\|kv\|store create`: a resource of this file's scope. |
+| `migrations_dir` | no | Databases only: where your SQL migrations live. |
+
+```bash
+flect db create shop-db               # in the scope of ./flect.toml
+# ✓ created database "shop-db" in acme/web/shop/production (provisioned)
+#   flect.toml → id = "res_k7f3a2"
+```
+
+- **Scope-bound.** An id from another environment, project or workspace is
+  refused: `res_p91xq4 is not a database in acme/web/shop/production`. A dev
+  service can never be pointed at a production database, even by copying its
+  id.
+- **Sharing.** Two applications in the same scope share a resource by writing
+  the same id.
+- **Binding names are unique in a scope.** Two applications in one
+  environment cannot both name different databases `DB`; the deploy stops and
+  says which resource the name already points at.
+- **Deleting.** `flect db delete <id>` is refused while a binding points at
+  the resource; `--force` removes the bindings first.
+
+## Services: `[services.<name>]`
+
+`<name>` is lower-case letters, digits and `-`. It is what `calls` names and
+what the env var is made from (`api` → `API_SERVICE_URL`).
 
 | Field | Description |
-|-------|-------------|
-| `name` | App name (required). |
-| `image` | Container image (`registry/name:tag`). |
-| `port` | Container port. |
-| `public` | `true` to own the domain — only one app may be public. |
-| `expose` | Mount at a path prefix under the shared domain (e.g. `/v1/auth`). |
-| `replicas` | Instance count. |
-| `cpuMhz` | CPU allocation, MHz. |
-| `memoryMb` | Memory allocation, MB. |
-| `health` | Health check — a path, a table, or `false`. See below. |
+|---|---|
+| `image` | Container image, `registry/name:tag`. Build and push it first; the registry must be public. |
+| `port` | The port the container listens on. |
+| `public` | `true` to own the domain and get `https://<app>-<service>-<shortid>.up.flect.run`. At most one service. |
+| `expose` | A path under the public service's host, e.g. `/v1/auth`. The prefix is stripped before the request reaches the service. |
+| `replicas`, `cpuMhz`, `memoryMb` | Size. |
+| `health` | Health check: a path, a table, or `false`. See below. |
+| `uses` | Bindings it may resolve. |
+| `calls` | Services of this file whose address it gets. Not itself. |
+| `secrets` | Names of the secrets it gets. |
+| `vars` | `[services.<name>.vars]`: its own plain vars, on top of `[vars]`. |
+| `name` | The deployed app's name, when it is not `<app>-<service>`. Only to keep an app that already runs under another name. |
 
-### `health` — what the platform probes
+A service with no `public` and no `expose` is private: reachable only by the
+services that `call` it.
 
-By default Flect probes `GET /healthz` on your container every 15 seconds with a
-3 second timeout. This is not cosmetic: **while the check fails, Traefik keeps
-the app out of its backend and sibling `[[services]]` URLs render empty**, so an
-app that answers health somewhere else looks exactly like an app that is down.
+### `health`
 
-Three forms, all optional:
+By default the platform probes `GET /healthz` every 15 s with a 3 s timeout.
+**While it fails, no traffic reaches the service and the services that call it
+get an empty address.**
 
 ```toml
-[[apps]]
-name   = "api"
-health = "/api/health"        # just a different path
+[services.api]
+health = "/api/health"         # another path
 
-[[apps]]
-name = "slow-starter"
-  [apps.health]               # path + timings
-  path     = "/status"
-  interval = "30s"            # "30s", "2m", or a bare number of seconds
-  timeout  = 5
+[services.slow]
+health = { path = "/status", interval = "30s", timeout = 5 }
 
-[[apps]]
-name   = "worker"
-health = false                # no check at all — this app serves no HTTP
+[services.worker]
+health = false                 # no HTTP server at all
 ```
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `path` | `/healthz` | Path to probe. Must start with `/`. |
-| `interval` | `15s` | Time between probes. |
-| `timeout` | `3s` | How long a probe may take before it counts as failed. |
+### `vars` and `secrets`
 
-Use `health = false` for workloads that expose no HTTP server — a queue consumer
-or a cron-style worker. Without it their check stays failing forever, and they
-never become discoverable.
+- `vars` are for configuration you could commit. A name that looks like a
+  secret (`*_SECRET`, `*_KEY`, `*_TOKEN`, `*_PASSWORD`) gets a warning.
+- `secrets` holds names only. Values are set per service and per scope from
+  stdin, so they stay out of the file, the shell history and the event log:
 
-Omitting `health` entirely keeps the default, so existing projects need no change.
+  ```bash
+  printf %s "$STRIPE_KEY" | flect secret set api STRIPE_KEY
+  flect secret list            # names only; shows any listed one not set yet
+  ```
 
-### `[vars]`
+- A name cannot be both a var and a secret.
+- Setting a value in dev never sets it in production. A new value reaches the
+  service on its next deploy.
 
-Plain environment variables to set on the app(s) at deploy time. (Secrets should
-come from your platform's secret store, not here.)
+## What `flect deploy` checks
 
-### `[[services]]`
+Before it changes anything, `flect deploy` reads the target scope and checks
+the whole file. Any problem stops the deploy with nothing changed:
 
-Wire one app to another: inject the resolved URL of app `app` into the
-environment as the variable named by `binding`.
+| Found | Result |
+|---|---|
+| `uses`/`calls` naming something the file does not define | stop, with "did you mean" |
+| A resource entry without `id` | stop, with the `flect db create` command |
+| An `id` that is not a live resource of that kind in the scope | stop |
+| A binding name the scope already points at another resource | stop |
+| A listed secret with no value in the scope | stop, with the `flect secret set` command |
+| Vars the last deploy kept that the file no longer has | stop, listing them; `--yes` drops them |
+| A resource no service uses | warning |
+| A secret-looking name in `vars` | warning |
+| A service of this application running in the scope but no longer in the file | warning (it keeps running) |
 
-| Field | Description |
-|-------|-------------|
-| `binding` | Env var name to inject. |
-| `app` | The sibling app whose URL is injected. |
+Then it binds the resources, declares every service, and deploys each one with
+only its own `uses`, `calls`, vars and secrets.
 
 ## `[page]` — a static site
 
-A page is a git repository the platform clones, builds and serves (no runtime,
-no bindings). The build runs in the cluster, so nothing depends on your machine.
+A page is a git repository the platform clones, builds and serves. It has no
+runtime and no bindings, and it sits in a file of its own.
 
 ```toml
 [page]
 name     = "docs"
-repo     = "https://github.com/acme/docs"   # required
-ref      = "main"                            # branch, tag or commit (default: main)
+repo     = "https://github.com/acme/docs"   # required, public
+ref      = "main"                            # branch, tag or commit
 template = "docs"                            # Starlight docs template
 title    = "Acme Docs"
 github   = "https://github.com/acme/docs"
-# domain = "docs.acme.com"                   # optional custom domain (else a generated hostname)
+# domain = "docs.acme.com"
 ```
 
-Deploy it with `flect page deploy`. If the repo has its own `astro.config.*` or
-a `[page.build]` command, that build runs instead of the template.
+Deploy it with `flect page deploy`; it goes to the active scope (`flect use`).
+A repo with its own `astro.config.*` or a `[page.build]` command builds with
+that instead of the template. Every build is published to its own directory
+and swapped in atomically, so a failed build never touches the live site and
+`flect page rollback` is a pointer switch.
 
-Each build is published to its own immutable directory and swapped in atomically,
-so a failed build never touches the live site and `flect page rollback` is a
-pointer switch rather than a rebuild.
+## The old format
+
+Files written before this format (`[[apps]]`, `[[services]]` entries,
+resources by `name`) still deploy, with the old behaviour and a warning:
+
+- they deploy to the active scope (`flect use`), and `scope` in the file is
+  ignored;
+- resources are created by `name` when missing;
+- every app gets every var and every service address, and may resolve every
+  binding of its scope.
+
+A file is one format or the other: `[services.<name>]` together with
+`[[apps]]` is an error. The old format goes away in v0.4.
+
+Moving a file over:
+
+1. `flect db list` (and `kv`, `store`) for each resource's `res_` id.
+2. Turn each `[[apps]]` into a `[services.<name>]`. Set `name` when the app's
+   current name is not `<app>-<service>`, so the running app is kept.
+3. List `uses`, `calls` and `secrets` per service; keep only the vars each one
+   reads.
+4. Set the secrets with `flect secret set`.
+5. `flect deploy` once: it stops and lists the vars that would be dropped.
+   Check them, then `flect deploy --yes`.

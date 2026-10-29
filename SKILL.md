@@ -4,7 +4,7 @@ description: >-
   Build and deploy an app plus its backing resources (database, KV, object
   storage, static pages) on the Flect platform. Use when the user wants to ship a
   service on Flect, wire up a Flect database/KV/store, write flect.toml, use
-  @getflect/sdk (createEnv), or run the flect CLI (login, scope, deploy).
+  @dotlabshq/flect-sdk (createEnv), or run the flect CLI (login, scope, deploy).
 ---
 
 # Flect
@@ -20,7 +20,7 @@ is self-contained.
 
    | When you're… | Load |
    |---|---|
-   | deploying a container / writing an app's `flect.toml` | [`skills/flect-app/SKILL.md`](./skills/flect-app/SKILL.md) |
+   | writing an application's `flect.toml`, deploying services, secrets, a dev environment | [`skills/flect-app/SKILL.md`](./skills/flect-app/SKILL.md) |
    | adding a database, queries, migrations, Drizzle | [`skills/flect-db/SKILL.md`](./skills/flect-db/SKILL.md) |
    | adding a cache, counters, sessions, rate limits | [`skills/flect-kv/SKILL.md`](./skills/flect-kv/SKILL.md) |
    | storing files, presigned URLs, S3 | [`skills/flect-store/SKILL.md`](./skills/flect-store/SKILL.md) |

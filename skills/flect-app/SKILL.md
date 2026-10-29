@@ -1,101 +1,120 @@
 ---
 name: flect-app
 description: >-
-  Deploy a containerized app on Flect — write flect.toml, build/push the image,
-  flect deploy, and pick routing (public / expose / private). Use when shipping a
-  service, wiring a Dockerfile for Flect, or fixing an app's flect.toml.
+  Deploy an application's services on Flect — write flect.toml ([app],
+  resources by id, [services.<name>] with uses/calls/vars/secrets), build and
+  push the images, flect deploy, routing (public / expose / private), a dev
+  environment in flect.dev.toml. Use when shipping services, wiring a
+  Dockerfile for Flect, or fixing or migrating a flect.toml.
 ---
 
-# Flect · Apps
+# Flect · Applications
 
-Part of the [flect](../flect/SKILL.md) skill set. Deploy any Docker image as a
-Flect app; it binds to databases ([flect-db](../flect-db/SKILL.md)), KV
-([flect-kv](../flect-kv/SKILL.md)), and object storage
-([flect-store](../flect-store/SKILL.md)).
+Part of the [flect](../flect/SKILL.md) skill set. A Flect application is one
+`flect.toml`: its services are containers, and they use databases
+([flect-db](../flect-db/SKILL.md)), KV ([flect-kv](../flect-kv/SKILL.md)) and
+object storage ([flect-store](../flect-store/SKILL.md)) by id.
 
-## What it is
-
-A Flect app is a container deployed to the cluster. Public apps get an HTTPS
-hostname (`<name>-<shortid>.up.flect.run`) with an auto-issued TLS certificate.
-
-## Workflow
-
-```
-0. flect login && flect config set gatewayUrl <origin>   (once per machine)
-1. Build and push a Docker image to a registry (ghcr.io, Docker Hub, …)
-2. Declare the app + its bindings in flect.toml
-3. flect deploy
-```
-
-First time on a machine, point the CLI at the platform and confirm it's wired:
-
-```bash
-flect login
-flect config set gatewayUrl https://flect.cloud   # self-hosted: your gateway origin
-flect doctor                                       # all green before you deploy
-```
-
-## flect.toml
-
-Single app (top-level `name`):
-
-```toml
-name    = "my-app"
-runtime = "node"
-port    = 3000
-
-[[databases]]
-binding = "DB"
-name    = "my-db"
-
-[[kv]]
-binding = "CACHE"
-name    = "my-cache"
-```
-
-App-group form — multiple apps sharing one domain (e.g. an app + a sibling auth):
+## The file
 
 ```toml
 [app]
-name   = "my-app"
-domain = "my-app.up.flect.run"   # optional custom/shared domain
+name  = "shop"
+scope = "web/shop/production"        # workspace/project/environment in the active org
+# domain = "shop.example.com"        # custom domain for the public service
 
-[[apps]]
-name   = "api"
-image  = "ghcr.io/you/api:1.0.0"
+[[databases]]
+binding = "DB"
+id      = "res_k7f3a2"               # flect db create shop-db
+
+[vars]                               # every service
+LOG_LEVEL = "info"
+
+[services.api]
+image   = "ghcr.io/acme/shop-api:1.4.0"
+port    = 3000
+uses    = ["DB"]                     # may resolve DB; nothing else
+secrets = ["STRIPE_KEY"]
+
+[services.api.vars]                  # api only; wins over [vars]
+CURRENCY = "EUR"
+
+[services.auth]
+image  = "ghcr.io/dotlabshq/auth-service:1.0.1"
 port   = 3000
-public = true            # owns the domain (at most one)
+expose = "/v1/auth"                  # under web's host, prefix stripped
 
-[[apps]]
-name   = "auth"
-image  = "ghcr.io/dotlabshq/auth-service:0.4.0"
-expose = "/v1/auth"      # mounted at a path under the shared domain
-
-[[services]]
-binding = "iam"          # inject a sibling app's URL as <BINDING>_SERVICE_URL
-app     = "iam-service"
+[services.web]
+image    = "ghcr.io/acme/shop-web:1.4.0"
+port     = 3000
+public   = true                      # owns the domain
+memoryMb = 512
+calls    = ["api", "auth"]           # API_SERVICE_URL, AUTH_SERVICE_URL
 ```
 
-`[[apps]]` fields: `name`, `image`, `port`, `public`, `expose`, `replicas`,
-`cpuMhz`, `memoryMb`, `health`. See the [flect.toml reference](/platform/flect-toml/).
+Service fields: `image`, `port`, `public`, `expose`, `replicas`, `cpuMhz`,
+`memoryMb`, `health`, `uses`, `calls`, `secrets`, `vars`, and `name` (only to
+keep an app already running under a name other than `<app>-<service>`). Every
+key is in the [flect.toml reference](/platform/flect-toml/).
+
+## Deciding what each service lists
+
+Go through the code of each service:
+
+| The code… | List |
+|---|---|
+| calls `env.db('DB')` / `env.kv(…)` / `env.store(…)` | the binding in `uses` |
+| reads `process.env.API_SERVICE_URL` | `"api"` in `calls` |
+| reads a config value | the name in that service's `vars` (or `[vars]` if every service reads it) |
+| reads a key, token, password or signing secret | the name in `secrets` |
+
+List nothing a service does not read. That is the point: a leaked front end
+holds no database access and no other service's secrets.
+
+## Routing
+
+| Setting | Reachable at |
+|---|---|
+| `public = true` | `https://<app>-<service>-<shortid>.up.flect.run`, plus `[app].domain` via a CNAME. One per file. |
+| `expose = "/v1/auth"` | That path under the public service's host. The prefix is stripped. |
+| neither | Private: only the services that `call` it, through `<NAME>_SERVICE_URL`. |
 
 ## Deploy
 
 ```bash
+# images first (Flect does not build containers; the registry must be public)
+docker build --platform linux/amd64 -t ghcr.io/acme/shop-api:1.4.0 . && docker push ghcr.io/acme/shop-api:1.4.0
+
+printf %s "$STRIPE_KEY" | flect secret set api STRIPE_KEY    # each listed secret, once per scope
 flect deploy
 ```
 
-Provisions any missing resources, binds them, and submits the Nomad job. Only
-`FLECT_TOKEN` and `FLECT_BROKER_URL` are injected — the SDK resolves everything
-else at runtime.
+`flect deploy` first checks the whole file against the scope: every id is a
+live resource of this scope, no binding name points elsewhere, every listed
+secret is set, and no var kept by the last deploy is silently dropped. On any
+problem it stops with nothing changed and says what to run. Then it binds the
+resources, declares every service, and deploys each one with only what it
+lists.
 
-If the app declares databases/KV/stores, the tenant needs substrate **providers**
-registered (an operator does this once — `flect doctor` warns when they're
-missing). An app with no resource bindings deploys without them. Routing is per app: `public = true` (owns a domain),
-`expose = "/path"` (a path under a shared domain, prefix stripped), or private
-(default, no ingress).
+A changed image tag, var, secret, `uses` or `calls` takes effect on the next
+`flect deploy`. A service restarts when its own settings change, or when the
+address of a service it `calls` changes. It does not restart for its other
+siblings.
 
-## Dockerfile requirements
+## A dev environment
+
+```bash
+cp flect.toml flect.dev.toml
+# edit: [app].scope = "web/shop/dev"; drop services dev does not need
+flect db create shop-db -c flect.dev.toml          # dev's own database → its id into flect.dev.toml
+printf %s "$DEV_KEY" | flect secret set api STRIPE_KEY -c flect.dev.toml
+flect deploy -c flect.dev.toml
+```
+
+The two files are independent: no inheritance, no shared ids, no shared
+secret values.
+
+## Container requirements
 
 ```dockerfile
 FROM node:22-alpine
@@ -107,22 +126,24 @@ EXPOSE 3000
 CMD ["node", "dist/index.js"]
 ```
 
-The container must:
+- Listen on `port`.
+- Answer `GET /healthz` with `200`, or set `health = "/your/path"`, or
+  `health = false` for a worker with no HTTP. Until the check passes no traffic
+  arrives, and services that call it get an empty address.
+- `linux/amd64`, dependencies bundled (no workspace symlinks).
+- The environment holds `FLECT_TOKEN`, `FLECT_BROKER_URL`, `PORT`, `NODE_ENV`,
+  `APP_PUBLIC_URL` (public and exposed services), its vars and secrets, and its
+  `*_SERVICE_URL`s. Nothing else: no database URL.
 
-- Listen on the port declared in `flect.toml` (`port`).
-- Respond to `GET /healthz` with `200` — or declare `health = "/your/path"` in
-  `flect.toml`. Until the check passes Traefik sends the app no traffic. A
-  workload that serves no HTTP at all sets `health = false`.
-- Be built for `linux/amd64` with dependencies bundled (no workspace symlinks).
-
-## Using @getflect/sdk
+## Using @dotlabshq/flect-sdk
 
 ```typescript
 import { Hono } from 'hono'
-import { createEnv } from '@getflect/sdk'
+import { serve } from '@hono/node-server'
+import { createEnv } from '@dotlabshq/flect-sdk'
 
 const env = createEnv()
-const db  = await env.db('DB')      // official @libsql/client
+const db  = await env.db('DB')      // official @libsql/client; 'DB' is in this service's uses
 const app = new Hono()
 
 app.get('/healthz', (c) => c.json({ ok: true }))
@@ -131,23 +152,35 @@ app.get('/users', async (c) => {
   return c.json({ users: rows })
 })
 
-export default app
+serve({ fetch: app.fetch, port: Number(process.env.PORT ?? 3000) })
 ```
 
-## Custom domain
+## Moving an old-format file
 
-Set `[app].domain` to your hostname and point a CNAME at the generated
-`<name>-<shortid>.up.flect.run`.
+A file with `[[apps]]`, `[[services]]` entries and resources by `name` is the
+old format. It still deploys, with a warning, but every app gets every var and
+binding.
+
+1. `flect db list` (and `kv`, `store`) for each resource's `res_` id.
+2. One `[services.<name>]` per `[[apps]]`. If the app's current name is not
+   `<app>-<service>`, set `name` to it so the running app is kept.
+3. Add `[app].scope`, and per service `uses`, `calls`, `secrets` and only the
+   vars it reads.
+4. `flect secret set` each secret.
+5. `flect deploy`: it stops and lists the kept vars that would be dropped.
+   Check the list, then `flect deploy --yes`.
 
 ## Management
 
 ```bash
-flect apps                 # list apps in the active scope (name, status, URL)
-flect deploy               # (re)deploy from flect.toml
+flect apps                  # the scope's apps: status, URL, image
+flect bindings              # what the file gives each service
+flect db list               # resources and the services using them
+flect secret list           # secret names per service; any missing
 ```
 
 ## Related skills
 
 - [flect](../flect/SKILL.md) — the model, CLI, scopes, plan limits.
-- [flect-db](../flect-db/SKILL.md) · [flect-kv](../flect-kv/SKILL.md) · [flect-store](../flect-store/SKILL.md) — bindings.
+- [flect-db](../flect-db/SKILL.md) · [flect-kv](../flect-kv/SKILL.md) · [flect-store](../flect-store/SKILL.md) — resources.
 - [flect-pages](../flect-pages/SKILL.md) — static/docs sites instead of a container.
