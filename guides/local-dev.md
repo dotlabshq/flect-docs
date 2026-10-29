@@ -93,6 +93,43 @@ S3_ACCESS_KEY_ID=minioadmin
 S3_SECRET_ACCESS_KEY=minioadmin
 ```
 
+## Object storage: a local MinIO, or the real store
+
+`flect dev` gives each store binding the same names, so one app runs against
+either.
+
+**A local MinIO.** Start it (step 2), create the bucket `flect dev` named
+(`<app>-<binding>`, e.g. `myapp-files`; or set `FILES_BUCKET`), and use the
+`S3_*` values above:
+
+```bash
+docker run --rm --network host -e AWS_ACCESS_KEY_ID=minioadmin -e AWS_SECRET_ACCESS_KEY=minioadmin \
+  amazon/aws-cli --endpoint-url http://localhost:9000 s3 mb s3://myapp-files
+```
+
+**The real store**, the one your services use. `flect store env` writes its
+connection, its own key included, into a git-ignored `.env.flect.local`
+(0600). Admins only:
+
+```bash
+flect store env res_wkw4s5 --binding FILES      # in the scope of ./flect.toml
+# ✓ wrote .env.flect.local (0600): uploads in acme/web/shop/production
+#   bucket   <org>-uploads-472bd970   (FILES_BUCKET)
+#   endpoint https://s3.eu.flect.run
+flect dev && node --env-file=.env.flect.local --import tsx/esm src/index.ts
+```
+
+The same file works with S3 tools:
+
+```bash
+set -a; . ./.env.flect.local; set +a
+aws s3 ls "s3://$FILES_BUCKET"
+```
+
+The key is the store's own, limited to its bucket. Treat the file like a
+password and delete it when you are done. A database or KV has no such command:
+their addresses are inside the cluster.
+
 ## 4. Run your app
 
 ```bash

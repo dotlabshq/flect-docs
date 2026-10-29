@@ -185,6 +185,8 @@ Never pass `--yes` without reading what it drops.
 - Do not deploy to production, delete resources (`flect db delete`,
   `--force`) or drop vars (`--yes`) without the user's go-ahead.
 - Do not edit `~/.flect/config.json`.
+- Do not read, print or commit `.env.flect.local` (from `flect store env`): it
+  holds a store's key. Point the app or tool at it with `--env-file`.
 
 ## The old format
 

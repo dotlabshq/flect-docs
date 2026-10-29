@@ -207,6 +207,11 @@ flect store create <name> | list | status <id> | delete <id> [--force]   # Garag
 - **`status <id>`** prints the full resource record as JSON.
 - **`delete <id>`** deprovisions it. Refused while a binding points at it;
   `--force` removes the bindings first. Its data is gone.
+- **`store env <id>`** (storage only, admins) writes the store's S3
+  connection, its key included, to `.env.flect.local` (0600, git-ignored):
+  the `S3_*` names `flect dev` reads, `<BINDING>_BUCKET`, and `AWS_*` for the
+  aws CLI. `--binding <name>` picks the bucket var, `--out <file>` another
+  file (`-` prints it). See [Local development](/guides/local-dev/).
 
 ```bash
 $ flect db create shop-db

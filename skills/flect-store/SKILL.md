@@ -96,8 +96,19 @@ docker run -d -p 9000:9000 -p 9001:9001 \
 ```
 
 Set `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` (see
-[Local development](/guides/local-dev/)) and create the bucket in the MinIO
-console at `http://localhost:9001`.
+[Local development](/guides/local-dev/)) and create the bucket `flect dev`
+named (`<app>-<binding>`) in the MinIO console at `http://localhost:9001`.
+
+Against the real store instead (admins; the file holds the store's key and is
+git-ignored):
+
+```bash
+flect store env <id> --binding FILES     # writes .env.flect.local
+flect dev && node --env-file=.env.flect.local src/index.js
+set -a; . ./.env.flect.local; set +a; aws s3 ls "s3://$FILES_BUCKET"
+```
+
+Never commit `.env.flect.local` or paste its values anywhere.
 
 ## Related skills
 

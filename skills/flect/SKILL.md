@@ -166,6 +166,7 @@ flect dev [-c <file>]                       # flect.local.json for local createE
 flect deploy [-c <file>] [--yes]            # check, bind, deploy each service
 flect apps                                  # deployed apps of the active scope
 flect <db|kv|store> create <name> | list | status <id> | delete <id> [--force]   [-c <file>]
+flect store env <id> [--binding FILES]      # a store's S3 connection → .env.flect.local (admins)
 flect secret set <service> <NAME> | list [service] | unset <service> <NAME>      [-c <file>]
 flect resolve <binding>                     # a binding's manifest, secrets redacted
 flect page deploy | ls | status | logs | rollback | stop
