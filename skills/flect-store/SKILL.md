@@ -48,8 +48,8 @@ import { createEnv } from '@dotlabshq/flect-sdk'
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 
 const env = createEnv()
-const s3  = await env.store('FILES')          // configured S3Client
-const Bucket = process.env.FILES_BUCKET!       // the resolved bucket name (<BINDING>_BUCKET)
+const s3     = await env.store('FILES')       // configured S3Client
+const Bucket = await env.bucket('FILES')      // the store's bucket (SDK >= 0.2.1)
 
 await s3.send(new PutObjectCommand({ Bucket, Key: 'hello.txt', Body: 'Hello, Flect!', ContentType: 'text/plain' }))
 const { Body } = await s3.send(new GetObjectCommand({ Bucket, Key: 'hello.txt' }))
@@ -57,8 +57,9 @@ const text = await Body?.transformToString()
 await s3.send(new DeleteObjectCommand({ Bucket, Key: 'hello.txt' }))
 ```
 
-The bucket name is **not** the binding — read it from `process.env.<BINDING>_BUCKET`.
-It's the real `S3Client`, so use official commands, not `store.put()`.
+The bucket name is **not** the binding and is in no env var: the platform names
+it, and `env.bucket('FILES')` returns it. It's the real `S3Client`, so use
+official commands, not `store.put()`.
 
 ### Presigned URLs (direct browser upload/download)
 
@@ -72,6 +73,12 @@ const url = await getSignedUrl(
   { expiresIn: 300 },
 )
 ```
+
+The client computes checksums only when an operation requires one, so a
+presigned PUT carries no checksum of an empty body and the browser's upload is
+accepted. Building your own `S3Client` for Flect storage? Set
+`requestChecksumCalculation: 'WHEN_REQUIRED'` (and
+`responseChecksumValidation`), or presigned PUTs fail with `InvalidDigest`.
 
 ## Isolation
 

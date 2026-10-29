@@ -108,8 +108,8 @@ credentials. Install the peers: `npm install @aws-sdk/client-s3`.
 ```typescript
 import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 
-const s3 = await env.store('FILES')
-const bucket = process.env.FILES_BUCKET   // the resolved bucket name
+const s3     = await env.store('FILES')
+const bucket = await env.bucket('FILES')  // the store's bucket, named by the platform
 
 await s3.send(new PutObjectCommand({
   Bucket: bucket,

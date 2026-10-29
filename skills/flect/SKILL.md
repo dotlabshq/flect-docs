@@ -148,7 +148,7 @@ The most common agent mistakes:
   `db.query()`, `kv.getJson()`, `store.put()`.
 - **Missing peers.** Install `@libsql/client`, `ioredis`,
   `@aws-sdk/client-s3` as needed. A store's bucket is
-  `process.env.<BINDING>_BUCKET`.
+  `await env.bucket('<BINDING>')`.
 - **Migrations.** The SDK has none; apply schema on boot (see
   [`flect-db`](../flect-db/SKILL.md)).
 - **Secrets in vars.** Put the name in `secrets` and set the value with

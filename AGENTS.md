@@ -145,7 +145,7 @@ services. Never reuse a production id: the deploy refuses it.
   ttl)`, `s3.send(new PutObjectCommand(…))`.
 - Install the client libraries the bindings need: `@libsql/client`,
   `ioredis`, `@aws-sdk/client-s3`. A store's bucket is
-  `process.env.<BINDING>_BUCKET`.
+  `await env.bucket('<BINDING>')`.
 - The SDK has no migrations. Apply your schema on boot (see `flect-db`).
 - Read other services at `process.env.<NAME>_SERVICE_URL`; never hard-code a
   host.
