@@ -82,7 +82,7 @@ issues a TLS certificate. An app declares one of three routing modes:
 | Mode | `flect.toml` | Traefik rule |
 |------|--------------|--------------|
 | **public** | `public = true` | owns the domain: `Host(...)` |
-| **expose** | `expose = "/path"` | a path under a shared domain: `Host(...) && PathPrefix(/path)` (prefix stripped) |
+| **expose** | `expose = "/path"`, or a list of `{ path, to }` | each path under a shared domain: `Host(...) && (Path(/path) \|\| PathPrefix(/path/))`; the prefix is stripped, or replaced by `to` |
 | **private** | *(default)* | no ingress; reachable only inside the cluster |
 
 Public apps get a stable generated hostname:

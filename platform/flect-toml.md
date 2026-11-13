@@ -113,7 +113,7 @@ what the env var is made from (`api` → `API_SERVICE_URL`).
 | `image` | Container image, `registry/name:tag`. Build and push it first; the registry must be public. |
 | `port` | The port the container listens on. |
 | `public` | `true` to own the domain and get `https://<app>-<service>-<shortid>.up.flect.run`. At most one service. |
-| `expose` | A path under the public service's host, e.g. `/v1/auth`. The prefix is stripped before the request reaches the service. |
+| `expose` | A path under the public service's host, e.g. `/v1/auth`, or a list of paths. See below. |
 | `replicas`, `cpuMhz`, `memoryMb` | Size. |
 | `health` | Health check: a path, a table, or `false`. See below. |
 | `uses` | Bindings it may resolve. |
@@ -124,6 +124,37 @@ what the env var is made from (`api` → `API_SERVICE_URL`).
 
 A service with no `public` and no `expose` is private: reachable only by the
 services that `call` it.
+
+### `expose`
+
+One path, as before: the prefix is stripped before the request reaches the
+service (`/v1/auth/session` arrives as `/session`).
+
+```toml
+[services.auth]
+expose = "/v1/auth"
+```
+
+A list, when one service answers on several paths (broker 0.8.20, CLI 0.3.6).
+Each entry is a path, or `{ path, to }`. `to` is the prefix put in the path's
+place inside the service; it defaults to `/`, which strips the path.
+
+```toml
+[services.auth]
+expose = [
+  { path = "/auth",    to = "/ui" },   # /auth/login      -> /ui/login
+  { path = "/v1/auth", to = "/api" },  # /v1/auth/session -> /api/session
+]
+```
+
+- `strip = false` passes the path through unchanged (the same as `to` = the
+  path itself). It cannot be combined with `to`.
+- A path matches itself and what is below it: `/org` takes `/org` and
+  `/org/...`, not `/organizations`. The longer path wins when two overlap
+  (`/v1/auth/admin` before `/v1/auth`).
+- At most 10 paths. A path is never `/` alone, and appears once in the list.
+- Two services on the same host cannot expose the same path: the second deploy
+  is refused and the error names the service that has it.
 
 ### `health`
 

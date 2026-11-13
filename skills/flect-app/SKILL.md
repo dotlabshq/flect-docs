@@ -77,6 +77,7 @@ holds no database access and no other service's secrets.
 |---|---|
 | `public = true` | `https://<app>-<service>-<shortid>.up.flect.run`, plus `[app].domain` via a CNAME. One per file. |
 | `expose = "/v1/auth"` | That path under the public service's host. The prefix is stripped. |
+| `expose = [{ path = "/auth", to = "/ui" }, { path = "/v1/auth", to = "/api" }]` | Several paths under that host. `to` replaces the prefix inside the service (default `/` strips it). Needs broker 0.8.20 and CLI 0.3.6. |
 | neither | Private: only the services that `call` it, through `<NAME>_SERVICE_URL`. |
 
 ## Deploy
